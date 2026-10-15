@@ -1,4 +1,5 @@
 # PowerShell Web Server for VMware VLAN Switcher & Batch Deployer
+# Author: Kerr (https://github.com/kerr20801)
 # Pure ASCII encoding - 100% compatible with all Windows code pages
 
 $Port = 8899
@@ -31,6 +32,12 @@ try {
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host " VMware VLAN Automation Portal is RUNNING!" -ForegroundColor Green
 Write-Host " URL: $Prefix" -ForegroundColor Yellow
+if (Get-Command Connect-VIServer -ErrorAction SilentlyContinue) {
+    Write-Host " Status: PowerCLI module loaded successfully!" -ForegroundColor Green
+} else {
+    Write-Host " [WARNING] PowerCLI module NOT detected!" -ForegroundColor Yellow
+    Write-Host " Please run 'setup_modules.bat' to download required modules." -ForegroundColor Yellow
+}
 Write-Host " Press Ctrl + C to stop the service." -ForegroundColor Gray
 Write-Host "==========================================================" -ForegroundColor Cyan
 
@@ -97,6 +104,14 @@ while ($listener.IsListening) {
                 Import-Module VMware.VimAutomation.Core -ErrorAction SilentlyContinue
             }
 
+            if (-not (Get-Command Connect-VIServer -ErrorAction SilentlyContinue)) {
+                Send-JsonResponse $response @{
+                    success = $false
+                    message = "VMware PowerCLI module not detected! Please run setup_modules.bat to download portable modules or install PowerCLI."
+                }
+                continue
+            }
+
             $targetServer = $body.server.Trim() -replace '^https?://', '' -replace '/.*$', ''
 
             if ($global:ActiveVIServer) {
@@ -140,6 +155,74 @@ while ($listener.IsListening) {
             Write-Host "Connected and inventory loaded successfully!" -ForegroundColor Green
         } catch {
             Write-Host "Connection failed: $($_.Exception.Message)" -ForegroundColor Red
+            Send-JsonResponse $response @{
+                success = $false
+                message = $_.Exception.Message
+            }
+        }
+        continue
+    }
+
+    # 2.5 API: Extract/Clone Network Configuration from an Existing Host
+    if ($rawUrl -eq "/api/clone-host-network" -and $request.HttpMethod -eq "POST") {
+        $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
+        $body = $reader.ReadToEnd() | ConvertFrom-Json
+
+        if (-not $global:ActiveVIServer) {
+            Send-JsonResponse $response @{
+                success = $false
+                message = "Not connected to any vCenter/ESXi yet. Please connect first."
+            }
+            continue
+        }
+
+        try {
+            $srcHostName = ("" + $body.sourceHost).Trim()
+            Write-Host "Extracting network configuration from source host [$srcHostName]..." -ForegroundColor Cyan
+
+            $hostObj = Get-VMHost -Name $srcHostName -ErrorAction SilentlyContinue
+            if (-not $hostObj) {
+                Send-JsonResponse $response @{
+                    success = $false
+                    message = "Source host '$srcHostName' not found."
+                }
+                continue
+            }
+
+            $pgs = Get-VirtualPortGroup -VMHost $hostObj -ErrorAction SilentlyContinue
+            $items = @()
+            $textLines = @()
+
+            foreach ($pg in $pgs) {
+                $vswName = if ($pg.VirtualSwitchName) { $pg.VirtualSwitchName } elseif ($pg.VirtualSwitch) { $pg.VirtualSwitch.Name } else { "" }
+                if (-not $vswName) { continue }
+
+                $pgName = $pg.Name
+                $vlanId = [int]$pg.VLanId
+
+                # Skip default VM / Management networks if requested
+                if ($body.skipDefaultVmNetwork -and ($pgName -eq "VM Network" -or $pgName -eq "Management Network")) {
+                    continue
+                }
+
+                $items += [PSCustomObject]@{
+                    vswitch = $vswName
+                    name    = $pgName
+                    vlanId  = $vlanId
+                }
+                $textLines += "$vswName, $pgName, $vlanId"
+            }
+
+            Write-Host "Extracted $($items.Count) PortGroups from [$srcHostName]." -ForegroundColor Green
+            Send-JsonResponse $response @{
+                success    = $true
+                sourceHost = $srcHostName
+                count      = $items.Count
+                items      = $items
+                text       = ($textLines -join [Environment]::NewLine)
+            }
+        } catch {
+            Write-Host "Extract host network error: $($_.Exception.Message)" -ForegroundColor Red
             Send-JsonResponse $response @{
                 success = $false
                 message = $_.Exception.Message

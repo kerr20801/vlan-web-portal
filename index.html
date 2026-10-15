@@ -91,6 +91,65 @@
             box-shadow: 0 0 8px var(--success);
         }
 
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .github-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 6px 14px;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .github-badge:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: #64748b;
+            color: #ffffff;
+        }
+
+        .app-footer {
+            width: 100%;
+            max-width: 960px;
+            margin-top: 36px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .app-footer a {
+            color: #60a5fa;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .app-footer a:hover {
+            color: #93c5fd;
+            text-decoration: underline;
+        }
+
+        .btn-clone {
+            background: #2563eb !important;
+            color: #ffffff !important;
+            border-color: #3b82f6 !important;
+        }
+
+        .btn-clone:hover {
+            background: #1d4ed8 !important;
+        }
+
         .tabs {
             width: 100%;
             max-width: 960px;
@@ -388,10 +447,18 @@
             <h1>🌐 VMware VLAN 批次自動部署工具</h1>
             <p>免手動新增 60 次 • 一鍵部署 20~40+ 個 VLAN • 支援 vCenter 與 單機 ESXi</p>
         </div>
-        <div class="status-pill" id="btnOpenConfig" title="點擊設定連線">
-            <span class="status-dot" id="statusDot"></span>
-            <span id="statusText">尚未連線 (點此設定)</span>
-            <span>⚙️</span>
+        <div class="header-actions">
+            <a href="https://github.com/kerr20801/vlan-web-portal" target="_blank" rel="noopener" class="github-badge" title="檢視 GitHub 原始碼與作者資訊 (Kerr)">
+                <svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+                </svg>
+                <span>GitHub</span>
+            </a>
+            <div class="status-pill" id="btnOpenConfig" title="點擊設定連線">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">尚未連線 (點此設定)</span>
+                <span>⚙️</span>
+            </div>
         </div>
     </div>
 
@@ -425,6 +492,7 @@
                         <div style="display: flex; justify-content: space-between; align-items: center;">
                             <label for="vlanInputList">VLAN 部署清單 (每行一筆) <span class="required">*</span></label>
                             <div class="btn-group">
+                                <button type="button" class="btn btn-secondary btn-sm btn-clone" id="btnCloneFromHost">🔄 從既有主機複製 (Clone)</button>
                                 <button type="button" class="btn btn-secondary btn-sm" id="btnLoadExample">📋 載入 60 筆範例資料</button>
                                 <button type="button" class="btn btn-secondary btn-sm" id="btnClearList">🗑️ 清空</button>
                             </div>
@@ -570,6 +638,16 @@
         </div>
     </div>
 
+    <!-- 頁尾作者與開源資訊 -->
+    <footer class="app-footer">
+        <p>
+            <strong>VMware VLAN Auto Portal</strong> • Created by 
+            <a href="https://github.com/kerr20801" target="_blank" rel="noopener">Kerr (@kerr20801)</a> • 
+            <a href="https://github.com/kerr20801/vlan-web-portal" target="_blank" rel="noopener">GitHub 原始碼</a> • 
+            MIT License
+        </p>
+    </footer>
+
     <!-- 連線設定 Modal -->
     <div class="modal-overlay" id="modalOverlay">
         <div class="modal">
@@ -609,16 +687,73 @@
         </div>
     </div>
 
+    <!-- 從既有主機複製網路設定 Modal -->
+    <div class="modal-overlay" id="cloneModalOverlay" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>🔄 從既有主機複製網路設定 (Clone)</h3>
+                <button type="button" id="btnCloseCloneModal" style="background:none; border:none; color:#94a3b8; font-size:1.4rem; cursor:pointer;">&times;</button>
+            </div>
+            
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
+                選取一台運作中的 ESXi 主機作為範本，自動讀取其上的所有 Standard Switch 與 PortGroup (VLAN) 並匯入清單。
+            </p>
+
+            <form id="cloneHostForm">
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label for="cloneSourceHostSelect">來源 ESXi 主機 (Source Host) <span class="required">*</span></label>
+                    <select id="cloneSourceHostSelect" required>
+                        <option value="">-- 請先連線以載入主機 --</option>
+                    </select>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; cursor: pointer;">
+                        <input type="checkbox" id="chkSkipDefaultNetworks" checked>
+                        <span>略過預設的 "VM Network" 與 "Management Network"</span>
+                    </label>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 18px;">
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; cursor: pointer;">
+                        <input type="radio" name="cloneInsertMode" value="replace" checked>
+                        <span>覆蓋清單（取代目前輸入框內容）</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; cursor: pointer; margin-top: 6px;">
+                        <input type="radio" name="cloneInsertMode" value="append">
+                        <span>附加（保留既有內容，加入到清單末端）</span>
+                    </label>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="btnCancelCloneModal">取消</button>
+                    <button type="submit" class="btn btn-primary" id="btnDoClone">
+                        <span id="cloneSpinner" style="display:none;" class="spinner"></span>
+                        <span id="cloneBtnLabel">🚀 讀取並匯入清單</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         let isConnected = false;
         let parsedVlanItems = [];
         let currentNetworkMap = {};
+        let cachedHosts = [];
 
         const modalOverlay = document.getElementById('modalOverlay');
         const btnOpenConfig = document.getElementById('btnOpenConfig');
         const btnCloseModal = document.getElementById('btnCloseModal');
         const btnCancelModal = document.getElementById('btnCancelModal');
         const connectForm = document.getElementById('connectForm');
+
+        const cloneModalOverlay = document.getElementById('cloneModalOverlay');
+        const btnCloneFromHost = document.getElementById('btnCloneFromHost');
+        const btnCloseCloneModal = document.getElementById('btnCloseCloneModal');
+        const btnCancelCloneModal = document.getElementById('btnCancelCloneModal');
+        const cloneHostForm = document.getElementById('cloneHostForm');
+        const cloneSourceHostSelect = document.getElementById('cloneSourceHostSelect');
 
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
@@ -631,6 +766,89 @@
         btnOpenConfig.onclick = () => modalOverlay.style.display = 'flex';
         btnCloseModal.onclick = () => modalOverlay.style.display = 'none';
         btnCancelModal.onclick = () => modalOverlay.style.display = 'none';
+
+        btnCloseCloneModal.onclick = () => cloneModalOverlay.style.display = 'none';
+        btnCancelCloneModal.onclick = () => cloneModalOverlay.style.display = 'none';
+
+        function updateCloneHostDropdown() {
+            cloneSourceHostSelect.innerHTML = '';
+            if (!cachedHosts || cachedHosts.length === 0) {
+                cloneSourceHostSelect.innerHTML = '<option value="">-- 無可用主機 (請先連線) --</option>';
+                return;
+            }
+            cloneSourceHostSelect.innerHTML = '<option value="">-- 請選擇來源 ESXi 主機 --</option>';
+            cachedHosts.forEach(h => {
+                const opt = document.createElement('option');
+                opt.value = h;
+                opt.textContent = `🖥️ ${h}`;
+                cloneSourceHostSelect.appendChild(opt);
+            });
+        }
+
+        btnCloneFromHost.onclick = () => {
+            if (!isConnected) {
+                alert('請先點擊右上角連線至 vCenter 或 ESXi 主機！');
+                modalOverlay.style.display = 'flex';
+                return;
+            }
+            updateCloneHostDropdown();
+            cloneModalOverlay.style.display = 'flex';
+        };
+
+        // 提交從主機複製表單
+        cloneHostForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const sourceHost = cloneSourceHostSelect.value;
+            if (!sourceHost) {
+                alert('請選擇來源主機！');
+                return;
+            }
+
+            const skipDefaultVmNetwork = document.getElementById('chkSkipDefaultNetworks').checked;
+            const mode = document.querySelector('input[name="cloneInsertMode"]:checked').value;
+
+            const spinner = document.getElementById('cloneSpinner');
+            const label = document.getElementById('cloneBtnLabel');
+            const btn = document.getElementById('btnDoClone');
+
+            spinner.style.display = 'inline-block';
+            label.textContent = '讀取主機網路中...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/clone-host-network', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sourceHost, skipDefaultVmNetwork })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    if (data.count === 0) {
+                        alert(`來源主機 [${sourceHost}] 未讀取到任何 Standard Port Group / VLAN 設定。`);
+                    } else {
+                        const headerComment = `# --- 複製自來源主機: ${sourceHost} (${data.count} 筆) ---`;
+                        if (mode === 'replace') {
+                            vlanInputList.value = headerComment + '\n' + data.text;
+                        } else {
+                            const existing = vlanInputList.value.trim();
+                            vlanInputList.value = (existing ? existing + '\n\n' : '') + headerComment + '\n' + data.text;
+                        }
+                        parseVlanList();
+                        cloneModalOverlay.style.display = 'none';
+                        alert(`✅ 成功從 [${sourceHost}] 匯入 ${data.count} 筆 VLAN 設定！\n已自動更新即時預覽表格。`);
+                    }
+                } else {
+                    alert('讀取失敗：' + data.message);
+                }
+            } catch (err) {
+                alert('呼叫 API 異常：' + err.message);
+            } finally {
+                spinner.style.display = 'none';
+                label.textContent = '🚀 讀取並匯入清單';
+                btn.disabled = false;
+            }
+        });
 
         // 分頁切換
         function switchTab(tab) {
@@ -746,6 +964,10 @@
                     statusDot.classList.add('online');
                     statusText.textContent = `已連線: ${server} (${data.serverType})`;
                     modalOverlay.style.display = 'none';
+
+                    // 快取主機並更新複製選單
+                    cachedHosts = data.hosts || [];
+                    updateCloneHostDropdown();
 
                     // 填入 ESXi 主機清單
                     targetHostSelect.innerHTML = '';

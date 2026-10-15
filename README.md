@@ -15,11 +15,15 @@
    - 支援直接從 Excel 貼上表格資料（以逗號、Tab 或空格分隔），每行一筆。
    - 具備即時格式解析、規則數量統計與視覺化預覽表格。
 
-2. **⚡ 自動建立與防呆機制**
-   - 若目標主機尚未建立對應的 vSwitch（如 `vSwitch1`），系統會**自動先建立 vSwitch**，再建立 Port Group。
-   - 若目標 Port Group 已存在，系統**自動略過 (Skipped)**，具備冪等性 (Idempotent)，保證不會拋出錯誤中斷流程。
+2. **🔄 支援「從既有主機複製網路 (Host Network Clone)」**
+   - 擴充叢集新上架 ESXi 主機時，**無需四處翻找過期的 Excel 檔案**。
+   - 一鍵讀取運作中主機的 Standard Switch 與所有 PortGroup (VLAN) 設定，自動解析並帶入清單，秒速克隆至新主機！
 
-3. **🖥️ 支援單主機或「全集群同步」**
+3. **⚡ 自動建立與防呆機制**
+   - 若目標主機尚未建立對應的 vSwitch（如 `vSwitch1`），系統會**自動先建立 vSwitch**，再建立 Port Group。
+   - 若目標 Port Group 已存在，系統**自動略过 (Skipped)**，具備冪等性 (Idempotent)，保證不會拋出錯誤中斷流程。
+
+4. **🖥️ 支援單主機或「全集群同步」**
    - 若連線至 vCenter，可指定單一目標 ESXi 主機，亦可選擇 **「🌟 全部主機同步部署」**，一次將新規格推播至所有節點。
    - 亦支援獨立單機 ESXi，無需 vCenter 授權即可使用。
 
@@ -61,7 +65,7 @@ VLAN_Web_Portal/
 ### 方式二：從 Git Clone 自行建置
 1. 複製本儲存庫：
    ```bash
-   git clone https://github.com/your-username/vlan-web-portal.git
+   git clone https://github.com/kerr20801/vlan-web-portal.git
    cd vlan-web-portal
    ```
 2. 執行 `setup_modules.bat` 下載相依模組（若本機已全域安裝 PowerCLI 可跳過此步）。
@@ -91,6 +95,11 @@ vSwitch1, VLAN200-DBCluster, 200
 ## 🔒 資安說明
 * 登入之主機帳號與密碼**僅保留在當前運行的 PowerShell 行程記憶體中**。
 * 不會在本地磁碟留下任何文字設定檔或歷史憑證，關閉後端服務視窗後立即全數釋放。
+
+---
+
+## 👨‍💻 作者 (Author)
+* **Kerr** ([@kerr20801](https://github.com/kerr20801))
 
 ---
 
