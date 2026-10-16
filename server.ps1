@@ -1,4 +1,4 @@
-# PowerShell Web Server for VMware VLAN Switcher & Batch Deployer
+﻿# PowerShell Web Server for VMware VLAN Switcher & Batch Deployer
 # Author: Kerr (https://github.com/kerr20801)
 # Pure ASCII encoding - 100% compatible with all Windows code pages
 
@@ -69,6 +69,204 @@ function Send-HtmlResponse($response, $filePath) {
         $response.StatusCode = 404
     }
     $response.OutputStream.Close()
+}
+
+function Get-SafeHostPortGroups {
+    param(
+        [Parameter(Mandatory = $true)]
+        $vmHostObj
+    )
+
+    $dict = [ordered]@{}
+
+    # Source 1: Direct ESXi Host ExtensionData (Instant, complete, in-memory array of standard portgroups)
+    try {
+        if ($vmHostObj.ExtensionData -and $vmHostObj.ExtensionData.Config -and $vmHostObj.ExtensionData.Config.Network -and $vmHostObj.ExtensionData.Config.Network.Portgroup) {
+            foreach ($rawPg in $vmHostObj.ExtensionData.Config.Network.Portgroup) {
+                $pgName = [string]$rawPg.Spec.Name
+                $vswName = [string]$rawPg.Spec.VswitchName
+                $vlanId = 0
+                if ($rawPg.Spec.VlanId -ne $null) {
+                    [int]::TryParse([string]$rawPg.Spec.VlanId, [ref]$vlanId) | Out-Null
+                }
+                if ($pgName -and $vswName) {
+                    $key = "$vswName|$pgName".ToLowerInvariant()
+                    if (-not $dict.Contains($key)) {
+                        $dict[$key] = [PSCustomObject]@{
+                            host       = $vmHostObj.Name
+                            vswitch    = $vswName
+                            name       = $pgName
+                            vlanId     = $vlanId
+                            switchType = "Standard"
+                        }
+                    }
+                }
+            }
+        }
+    } catch {}
+
+    # Source 2: Standard PowerCLI Get-VirtualPortGroup (Supplemental / Fallback with safe string/object checking)
+    try {
+        $pgs = Get-VirtualPortGroup -VMHost $vmHostObj -ErrorAction SilentlyContinue
+        foreach ($pg in $pgs) {
+            $vswName = ""
+            if ($pg.VirtualSwitchName) {
+                $vswName = [string]$pg.VirtualSwitchName
+            } elseif ($pg.VirtualSwitch) {
+                if ($pg.VirtualSwitch -is [string]) {
+                    $vswName = [string]$pg.VirtualSwitch
+                } elseif ($pg.VirtualSwitch.Name) {
+                    $vswName = [string]$pg.VirtualSwitch.Name
+                } else {
+                    $vswName = [string]$pg.VirtualSwitch
+                }
+            }
+            if (-not $vswName) { continue }
+
+            $pgName = [string]$pg.Name
+            if (-not $pgName) { continue }
+
+            $vlanId = 0
+            if ($pg.VLanId -ne $null) {
+                [int]::TryParse([string]$pg.VLanId, [ref]$vlanId) | Out-Null
+            }
+
+            $key = "$vswName|$pgName".ToLowerInvariant()
+            if (-not $dict.Contains($key)) {
+                $dict[$key] = [PSCustomObject]@{
+                    host       = $vmHostObj.Name
+                    vswitch    = $vswName
+                    name       = $pgName
+                    vlanId     = $vlanId
+                    switchType = "Standard"
+                }
+            }
+        }
+    } catch {}
+
+    # Source 3: Distributed Virtual PortGroups (vDS)
+    try {
+        if (-not (Get-Command Get-VDSwitch -ErrorAction SilentlyContinue)) {
+            Import-Module VMware.VimAutomation.Vds -ErrorAction SilentlyContinue
+        }
+        if (Get-Command Get-VDSwitch -ErrorAction SilentlyContinue) {
+            $vdsList = Get-VDSwitch -VMHost $vmHostObj -ErrorAction SilentlyContinue
+            foreach ($vds in $vdsList) {
+                $vdPgs = Get-VDPortgroup -VDSwitch $vds -ErrorAction SilentlyContinue
+                foreach ($vdpg in $vdPgs) {
+                    $pgName = [string]$vdpg.Name
+                    if (-not $pgName) { continue }
+                    if ($vdpg.IsUplink -eq $true -or $pgName -like "*DVUplinks*") { continue }
+
+                    $vswName = [string]$vds.Name
+                    $vlanId = 0
+                    if ($vdpg.VlanConfiguration) {
+                        if ($vdpg.VlanConfiguration.VlanId -ne $null) {
+                            [int]::TryParse([string]$vdpg.VlanConfiguration.VlanId, [ref]$vlanId) | Out-Null
+                        } elseif ($vdpg.VlanConfiguration -is [int]) {
+                            $vlanId = [int]$vdpg.VlanConfiguration
+                        } elseif ($vdpg.VlanConfiguration.Ranges) {
+                            $firstRange = $vdpg.VlanConfiguration.Ranges | Select-Object -First 1
+                            if ($firstRange -and $firstRange.Start) {
+                                $vlanId = [int]$firstRange.Start
+                            }
+                        }
+                    }
+                    if ($vlanId -eq 0 -and $vdpg.ExtensionData -and $vdpg.ExtensionData.Config -and $vdpg.ExtensionData.Config.DefaultPortConfig) {
+                        try {
+                            $vlanSpec = $vdpg.ExtensionData.Config.DefaultPortConfig.Vlan
+                            if ($vlanSpec -and $vlanSpec.VlanId -ne $null) {
+                                [int]::TryParse([string]$vlanSpec.VlanId, [ref]$vlanId) | Out-Null
+                            }
+                        } catch {}
+                    }
+
+                    $key = "$vswName|$pgName".ToLowerInvariant()
+                    if (-not $dict.Contains($key)) {
+                        $dict[$key] = [PSCustomObject]@{
+                            host       = $vmHostObj.Name
+                            vswitch    = $vswName
+                            name       = $pgName
+                            vlanId     = $vlanId
+                            switchType = "Distributed"
+                        }
+                    }
+                }
+            }
+        }
+    } catch {}
+
+    return @($dict.Values)
+}
+
+function Get-AllInventoryPortGroups {
+    $dict = [ordered]@{}
+
+    # 1. Iterate over all VMHosts
+    $allHosts = Get-VMHost -ErrorAction SilentlyContinue
+    foreach ($h in $allHosts) {
+        $hostPgs = Get-SafeHostPortGroups -vmHostObj $h
+        foreach ($item in $hostPgs) {
+            $key = "$($item.vswitch)|$($item.name)".ToLowerInvariant()
+            if (-not $dict.Contains($key)) {
+                $dict[$key] = $item
+            }
+        }
+    }
+
+    # 2. Iterate over all VDPortgroups (Global vCenter vDS)
+    try {
+        if (-not (Get-Command Get-VDSwitch -ErrorAction SilentlyContinue)) {
+            Import-Module VMware.VimAutomation.Vds -ErrorAction SilentlyContinue
+        }
+        if (Get-Command Get-VDSwitch -ErrorAction SilentlyContinue) {
+            $allVds = Get-VDSwitch -ErrorAction SilentlyContinue
+            foreach ($vds in $allVds) {
+                $vdPgs = Get-VDPortgroup -VDSwitch $vds -ErrorAction SilentlyContinue
+                foreach ($vdpg in $vdPgs) {
+                    $pgName = [string]$vdpg.Name
+                    if (-not $pgName) { continue }
+                    if ($vdpg.IsUplink -eq $true -or $pgName -like "*DVUplinks*") { continue }
+
+                    $vswName = [string]$vds.Name
+                    $vlanId = 0
+                    if ($vdpg.VlanConfiguration) {
+                        if ($vdpg.VlanConfiguration.VlanId -ne $null) {
+                            [int]::TryParse([string]$vdpg.VlanConfiguration.VlanId, [ref]$vlanId) | Out-Null
+                        } elseif ($vdpg.VlanConfiguration -is [int]) {
+                            $vlanId = [int]$vdpg.VlanConfiguration
+                        } elseif ($vdpg.VlanConfiguration.Ranges) {
+                            $firstRange = $vdpg.VlanConfiguration.Ranges | Select-Object -First 1
+                            if ($firstRange -and $firstRange.Start) {
+                                $vlanId = [int]$firstRange.Start
+                            }
+                        }
+                    }
+                    if ($vlanId -eq 0 -and $vdpg.ExtensionData -and $vdpg.ExtensionData.Config -and $vdpg.ExtensionData.Config.DefaultPortConfig) {
+                        try {
+                            $vlanSpec = $vdpg.ExtensionData.Config.DefaultPortConfig.Vlan
+                            if ($vlanSpec -and $vlanSpec.VlanId -ne $null) {
+                                [int]::TryParse([string]$vlanSpec.VlanId, [ref]$vlanId) | Out-Null
+                            }
+                        } catch {}
+                    }
+
+                    $key = "$vswName|$pgName".ToLowerInvariant()
+                    if (-not $dict.Contains($key)) {
+                        $dict[$key] = [PSCustomObject]@{
+                            host       = "vCenter-Global"
+                            vswitch    = $vswName
+                            name       = $pgName
+                            vlanId     = $vlanId
+                            switchType = "Distributed"
+                        }
+                    }
+                }
+            }
+        }
+    } catch {}
+
+    return @($dict.Values)
 }
 
 while ($listener.IsListening) {
@@ -148,11 +346,69 @@ while ($listener.IsListening) {
             $datastores = Get-Datastore -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name | Sort-Object
 
             Write-Host "Querying vSwitch and PortGroup topology..." -ForegroundColor Gray
+            $tempMap = [ordered]@{}
+
+            # 1. Standard Switches & PortGroups across all hosts
+            $allVswitches = Get-VirtualSwitch -ErrorAction SilentlyContinue
+            foreach ($vsw in $allVswitches) {
+                $vswName = [string]$vsw.Name
+                if (-not $vswName) { continue }
+                if (-not $tempMap.Contains($vswName)) {
+                    $tempMap[$vswName] = New-Object System.Collections.Generic.HashSet[string]
+                }
+                $pgs = Get-VirtualPortGroup -VirtualSwitch $vsw -ErrorAction SilentlyContinue
+                foreach ($pg in $pgs) {
+                    if ($pg.Name) {
+                        $tempMap[$vswName].Add([string]$pg.Name) | Out-Null
+                    }
+                }
+            }
+
+            # Supplement from ESXi host direct ExtensionData config to ensure 100% of standard portgroups are included
+            $allHostObjs = Get-VMHost -ErrorAction SilentlyContinue
+            foreach ($hObj in $allHostObjs) {
+                try {
+                    if ($hObj.ExtensionData.Config.Network.Portgroup) {
+                        foreach ($rawPg in $hObj.ExtensionData.Config.Network.Portgroup) {
+                            $vswName = [string]$rawPg.Spec.VswitchName
+                            $pgName = [string]$rawPg.Spec.Name
+                            if ($vswName -and $pgName) {
+                                if (-not $tempMap.Contains($vswName)) {
+                                    $tempMap[$vswName] = New-Object System.Collections.Generic.HashSet[string]
+                                }
+                                $tempMap[$vswName].Add($pgName) | Out-Null
+                            }
+                        }
+                    }
+                } catch {}
+            }
+
+            # 2. Distributed Switches (vDS)
+            try {
+                if (-not (Get-Command Get-VDSwitch -ErrorAction SilentlyContinue)) {
+                    Import-Module VMware.VimAutomation.Vds -ErrorAction SilentlyContinue
+                }
+                if (Get-Command Get-VDSwitch -ErrorAction SilentlyContinue) {
+                    $allVds = Get-VDSwitch -ErrorAction SilentlyContinue
+                    foreach ($vds in $allVds) {
+                        $vdsName = [string]$vds.Name
+                        if (-not $vdsName) { continue }
+                        if (-not $tempMap.Contains($vdsName)) {
+                            $tempMap[$vdsName] = New-Object System.Collections.Generic.HashSet[string]
+                        }
+                        $vdpgs = Get-VDPortgroup -VDSwitch $vds -ErrorAction SilentlyContinue
+                        foreach ($vdpg in $vdpgs) {
+                            if ($vdpg.Name -and $vdpg.IsUplink -ne $true -and $vdpg.Name -notlike "*DVUplinks*") {
+                                $tempMap[$vdsName].Add([string]$vdpg.Name) | Out-Null
+                            }
+                        }
+                    }
+                }
+            } catch {}
+
             $networkMap = [ordered]@{}
-            $vswitches = Get-VirtualSwitch -ErrorAction SilentlyContinue
-            foreach ($vsw in $vswitches) {
-                $pgs = Get-VirtualPortGroup -VirtualSwitch $vsw -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name | Sort-Object
-                $networkMap[$vsw.Name] = @($pgs)
+            foreach ($key in $tempMap.Keys) {
+                $networkMap[$key] = @($tempMap[$key] | Sort-Object)
             }
 
             Send-JsonResponse $response @{
@@ -229,22 +485,22 @@ while ($listener.IsListening) {
             if (-not $targetHostName -or $targetHostName -eq "_ALL_") {
                 $hostsToQuery = Get-VMHost -ErrorAction SilentlyContinue
             } else {
-                $hostsToQuery = Get-VMHost -Name $targetHostName -ErrorAction SilentlyContinue
+                $hostsToQuery = Get-VMHost -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq $targetHostName }
+                if (-not $hostsToQuery) {
+                    try {
+                        $escTH = [System.Management.Automation.WildcardPattern]::Escape($targetHostName)
+                        $hostsToQuery = Get-VMHost -Name $escTH -ErrorAction SilentlyContinue
+                    } catch {}
+                }
             }
 
             $portGroupList = @()
-            foreach ($h in $hostsToQuery) {
-                $pgs = Get-VirtualPortGroup -VMHost $h -ErrorAction SilentlyContinue
-                foreach ($pg in $pgs) {
-                    $vswName = if ($pg.VirtualSwitchName) { $pg.VirtualSwitchName } elseif ($pg.VirtualSwitch) { $pg.VirtualSwitch.Name } else { "" }
-                    if ($vswName) {
-                        $portGroupList += [PSCustomObject]@{
-                            host    = $h.Name
-                            vswitch = $vswName
-                            name    = $pg.Name
-                            vlanId  = [int]$pg.VLanId
-                        }
-                    }
+            if ($targetHostName -eq "_ALL_") {
+                $portGroupList = Get-AllInventoryPortGroups
+            } else {
+                foreach ($h in $hostsToQuery) {
+                    $hostPgs = Get-SafeHostPortGroups -vmHostObj $h
+                    $portGroupList += $hostPgs
                 }
             }
 
@@ -294,27 +550,36 @@ while ($listener.IsListening) {
 
         try {
             $srcHostName = ("" + $body.sourceHost).Trim()
-            Write-Host "Extracting network configuration from source host [$srcHostName]..." -ForegroundColor Cyan
+            Write-Host "Extracting network configuration from source: [$srcHostName]..." -ForegroundColor Cyan
 
-            $hostObj = Get-VMHost -Name $srcHostName -ErrorAction SilentlyContinue
-            if (-not $hostObj) {
-                Send-JsonResponse $response @{
-                    success = $false
-                    message = "Source host '$srcHostName' not found."
+            $rawItems = @()
+            if ($srcHostName -eq "_ALL_") {
+                $rawItems = Get-AllInventoryPortGroups
+            } else {
+                $hostObj = Get-VMHost -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq $srcHostName } | Select-Object -First 1
+                if (-not $hostObj) {
+                    try {
+                        $escSH = [System.Management.Automation.WildcardPattern]::Escape($srcHostName)
+                        $hostObj = Get-VMHost -Name $escSH -ErrorAction SilentlyContinue | Select-Object -First 1
+                    } catch {}
                 }
-                continue
+                if (-not $hostObj) {
+                    Send-JsonResponse $response @{
+                        success = $false
+                        message = "Source host '$srcHostName' not found."
+                    }
+                    continue
+                }
+                $rawItems = Get-SafeHostPortGroups -vmHostObj $hostObj
             }
 
-            $pgs = Get-VirtualPortGroup -VMHost $hostObj -ErrorAction SilentlyContinue
             $items = @()
             $textLines = @()
 
-            foreach ($pg in $pgs) {
-                $vswName = if ($pg.VirtualSwitchName) { $pg.VirtualSwitchName } elseif ($pg.VirtualSwitch) { $pg.VirtualSwitch.Name } else { "" }
-                if (-not $vswName) { continue }
-
-                $pgName = $pg.Name
-                $vlanId = [int]$pg.VLanId
+            foreach ($item in $rawItems) {
+                $vswName = $item.vswitch
+                $pgName  = $item.name
+                $vlanId  = [int]$item.vlanId
 
                 # Skip default VM / Management networks if requested
                 if ($body.skipDefaultVmNetwork -and ($pgName -eq "VM Network" -or $pgName -eq "Management Network")) {
@@ -322,9 +587,10 @@ while ($listener.IsListening) {
                 }
 
                 $items += [PSCustomObject]@{
-                    vswitch = $vswName
-                    name    = $pgName
-                    vlanId  = $vlanId
+                    vswitch    = $vswName
+                    name       = $pgName
+                    vlanId     = $vlanId
+                    switchType = $item.switchType
                 }
                 $textLines += "$vswName, $pgName, $vlanId"
             }
@@ -367,7 +633,13 @@ while ($listener.IsListening) {
             if ($body.targetHost -eq "_ALL_") {
                 $targetHosts = Get-VMHost -ErrorAction SilentlyContinue
             } else {
-                $targetHosts = Get-VMHost -Name $body.targetHost -ErrorAction SilentlyContinue
+                $targetHosts = Get-VMHost -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq $body.targetHost }
+                if (-not $targetHosts) {
+                    try {
+                        $escTH = [System.Management.Automation.WildcardPattern]::Escape($body.targetHost)
+                        $targetHosts = Get-VMHost -Name $escTH -ErrorAction SilentlyContinue
+                    } catch {}
+                }
             }
 
             if (-not $targetHosts -or $targetHosts.Count -eq 0) {
@@ -381,6 +653,21 @@ while ($listener.IsListening) {
             $results = @()
             foreach ($h in $targetHosts) {
                 Write-Host "Processing host: $($h.Name)..." -ForegroundColor Cyan
+
+                # Pre-cache existing portgroups for instant O(1) existence checks
+                $existingPgMap = @{}
+                $currentHostPgs = Get-SafeHostPortGroups -vmHostObj $h
+                foreach ($cpg in $currentHostPgs) {
+                    $existingPgMap["$($cpg.vswitch)|$($cpg.name)".ToLowerInvariant()] = $true
+                }
+
+                # Pre-cache vSwitches
+                $vswMap = @{}
+                $existingVsws = Get-VirtualSwitch -VMHost $h -ErrorAction SilentlyContinue
+                foreach ($v in $existingVsws) {
+                    if ($v.Name) { $vswMap[$v.Name.ToLowerInvariant()] = $v }
+                }
+
                 foreach ($item in $body.items) {
                     $vswName = ("" + $item.vswitch).Trim()
                     $pgName  = ("" + $item.name).Trim()
@@ -404,20 +691,8 @@ while ($listener.IsListening) {
                     }
 
                     try {
-                        # 1. Check or auto-create vSwitch
-                        $vsw = Get-VirtualSwitch -VMHost $h -Name $vswName -ErrorAction SilentlyContinue
-                        $vswCreated = $false
-                        if (-not $vsw) {
-                            $vsw = New-VirtualSwitch -VMHost $h -Name $vswName -ErrorAction Stop
-                            $vswCreated = $true
-                        }
-
-                        # 2. Check if Port Group exists
-                        $existingPg = Get-VirtualPortGroup -VMHost $h -Name $pgName -ErrorAction SilentlyContinue | Where-Object {
-                            $_.VirtualSwitchName -eq $vswName -or $_.VirtualSwitch.Name -eq $vswName
-                        }
-
-                        if ($existingPg) {
+                        $pgKey = "$vswName|$pgName".ToLowerInvariant()
+                        if ($existingPgMap.ContainsKey($pgKey)) {
                             $results += [PSCustomObject]@{
                                 host    = $h.Name
                                 vswitch = $vswName
@@ -426,17 +701,30 @@ while ($listener.IsListening) {
                                 status  = "skipped"
                                 message = "已存在主機 (自動略過)"
                             }
-                        } else {
-                            New-VirtualPortGroup -VirtualSwitch $vsw -Name $pgName -VLanId $vlanId -ErrorAction Stop | Out-Null
-                            $msg = if ($vswCreated) { "建立成功 (⚠️ 自動新建交換器 $vswName，尚未綁定實體 Uplink 網卡)" } else { "建立成功" }
-                            $results += [PSCustomObject]@{
-                                host    = $h.Name
-                                vswitch = $vswName
-                                name    = $pgName
-                                vlanId  = $vlanId
-                                status  = "created"
-                                message = $msg
-                            }
+                            continue
+                        }
+
+                        # 1. Check or auto-create vSwitch
+                        $vsw = $vswMap[$vswName.ToLowerInvariant()]
+                        $vswCreated = $false
+                        if (-not $vsw) {
+                            $vsw = New-VirtualSwitch -VMHost $h -Name $vswName -ErrorAction Stop
+                            $vswMap[$vswName.ToLowerInvariant()] = $vsw
+                            $vswCreated = $true
+                        }
+
+                        # 2. Create Port Group
+                        New-VirtualPortGroup -VirtualSwitch $vsw -Name $pgName -VLanId $vlanId -ErrorAction Stop | Out-Null
+                        $existingPgMap[$pgKey] = $true
+
+                        $msg = if ($vswCreated) { "建立成功 (⚠️ 自動新建交換器 $vswName，尚未綁定實體 Uplink 網卡)" } else { "建立成功" }
+                        $results += [PSCustomObject]@{
+                            host    = $h.Name
+                            vswitch = $vswName
+                            name    = $pgName
+                            vlanId  = $vlanId
+                            status  = "created"
+                            message = $msg
                         }
                     } catch {
                         $results += [PSCustomObject]@{
@@ -561,16 +849,35 @@ while ($listener.IsListening) {
             }
 
             Write-Host "Fetching source VM [$srcName]..." -ForegroundColor Cyan
-            $srcVm = Get-VM -Name $srcName -ErrorAction SilentlyContinue | Select-Object -First 1
+            # Exact pipeline match first (immune to PowerShell wildcard characters like [ ], *, ?)
+            $srcVm = Get-VM -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq $srcName } | Select-Object -First 1
             if (-not $srcVm) {
+                try {
+                    $escPattern = [System.Management.Automation.WildcardPattern]::Escape($srcName)
+                    $srcVm = Get-VM -Name $escPattern -ErrorAction SilentlyContinue | Select-Object -First 1
+                } catch {}
+            }
+            if (-not $srcVm) {
+                $srcVm = Get-VM -Name $srcName -ErrorAction SilentlyContinue | Select-Object -First 1
+            }
+
+            if (-not $srcVm) {
+                $avail = @(Get-VM -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
+                Write-Host "Source VM '$srcName' not found. Available: $($avail -join ', ')" -ForegroundColor Yellow
                 Send-JsonResponse $response @{
                     success = $false
-                    message = "Source VM '$srcName' not found."
+                    message = "Source VM '$srcName' not found. Please verify the VM exists in inventory."
                 }
                 continue
             }
 
-            $existingDst = Get-VM -Name $dstName -ErrorAction SilentlyContinue
+            $existingDst = Get-VM -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq $dstName } | Select-Object -First 1
+            if (-not $existingDst) {
+                try {
+                    $escDst = [System.Management.Automation.WildcardPattern]::Escape($dstName)
+                    $existingDst = Get-VM -Name $escDst -ErrorAction SilentlyContinue | Select-Object -First 1
+                } catch {}
+            }
             if ($existingDst) {
                 Send-JsonResponse $response @{
                     success = $false
@@ -580,50 +887,114 @@ while ($listener.IsListening) {
             }
 
             Write-Host "Building NonPersistent OS Customization Spec for [$dstName]..." -ForegroundColor Cyan
-            $osType = "Windows"
-            if ($srcVm.GuestId -and $srcVm.GuestId -like "*linux*") {
-                $osType = "Linux"
+
+            # 1. Parse DNS servers list
+            $dnsList = @()
+            if ($body.dns) {
+                $dnsList = @(("" + $body.dns).Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
             }
 
-            $specParams = @{
-                Type = "NonPersistent"
-                OSType = $osType
-                NamingScheme = "Fixed"
-                NamingPrefix = $hostName
-                ErrorAction = "Stop"
+            # 2. Robust OS detection: check GuestId, Guest.OSFullName, and VM Name
+            $isLinux = $false
+            $guestId = ("" + $srcVm.GuestId).ToLowerInvariant()
+            $guestOs = ("" + $srcVm.Guest.OSFullName).ToLowerInvariant()
+            $vmNameLower = ("" + $srcVm.Name).ToLowerInvariant()
+
+            $linuxKeywords = @("linux", "ubuntu", "debian", "centos", "rhel", "redhat", "sles", "suse", "photon", "fedora", "oracle", "rocky", "alma", "arch", "gentoo", "alpine", "freebsd")
+
+            foreach ($kw in $linuxKeywords) {
+                if ($guestId.Contains($kw) -or $guestOs.Contains($kw) -or $vmNameLower.Contains($kw)) {
+                    $isLinux = $true
+                    break
+                }
             }
+
+            if ($body.osType) {
+                if ($body.osType -eq "Linux") { $isLinux = $true }
+                if ($body.osType -eq "Windows") { $isLinux = $false }
+            }
+
+            $osType = if ($isLinux) { "Linux" } else { "Windows" }
+            Write-Host "Detected OS Type: $osType for [$srcName] (GuestId: $guestId, OS: $guestOs)" -ForegroundColor Cyan
+
+            # 3. Sanitize hostName for RFC 1123 / NetBIOS compliance
+            # RFC 1123 only allows alphanumeric and hyphen (-). Underscores (_), periods, and spaces are strictly disallowed by vCenter.
+            $rawHostName = ("" + $body.hostName).Trim()
+            if (-not $rawHostName) { $rawHostName = $dstName }
+
+            $cleanHostName = ($rawHostName -replace '[^a-zA-Z0-9-]', '-') -replace '-+', '-'
+            $cleanHostName = $cleanHostName.Trim('-')
+            if (-not $cleanHostName) {
+                $cleanHostName = "vm-host"
+            }
+
             if ($osType -eq "Windows") {
-                $specParams["TimeZone"] = 205
-                $specParams["Workgroup"] = "WORKGROUP"
+                # Windows NetBIOS computer name limit: 15 characters
+                if ($cleanHostName.Length -gt 15) {
+                    $cleanHostName = $cleanHostName.Substring(0, 15).Trim('-')
+                }
             } else {
+                # Linux RFC 1123 hostname: lowercase, max 63 characters
+                $cleanHostName = $cleanHostName.ToLowerInvariant()
+                if ($cleanHostName.Length -gt 63) {
+                    $cleanHostName = $cleanHostName.Substring(0, 63).Trim('-')
+                }
+            }
+            Write-Host "Sanitized RFC 1123 Hostname: [$rawHostName] -> [$cleanHostName]" -ForegroundColor Cyan
+
+            $specParams = @{
+                Type         = "NonPersistent"
+                OSType       = $osType
+                NamingScheme = "Fixed"
+                NamingPrefix = $cleanHostName
+                ErrorAction  = "Stop"
+            }
+
+            if ($osType -eq "Windows") {
+                # WindowsParameterSet mandatory parameters: FullName & OrgName
+                $specParams["FullName"]  = "Administrator"
+                $specParams["OrgName"]   = "Organization"
+                $specParams["TimeZone"]  = 205
+                $specParams["Workgroup"] = "WORKGROUP"
+                $specParams["ChangeSid"] = $true
+            } else {
+                # Linux customization spec: DnsServer is placed directly on the spec
                 $specParams["Domain"] = "local"
+                if ($dnsList.Count -gt 0) {
+                    $specParams["DnsServer"] = $dnsList
+                }
             }
 
             $spec = New-OSCustomizationSpec @specParams
 
             $nicMap = Get-OSCustomizationNicMapping -OSCustomizationSpec $spec | Select-Object -First 1
-            $staticIp = ("" + $body.ip).Trim()
 
-            if ($staticIp) {
+            # 4. Configure IP mode (DHCP vs Static IP)
+            $ipMode = if ($body.ipMode) { ("" + $body.ipMode).Trim().ToLowerInvariant() } else { "auto" }
+            $staticIp = ("" + $body.ip).Trim()
+            $isDhcp = ($ipMode -eq "dhcp" -or -not $staticIp)
+
+            if ($isDhcp) {
+                Write-Host "Configuring NIC mapping for DHCP (Dynamic IP)..." -ForegroundColor Cyan
+                $nicMap | Set-OSCustomizationNicMapping -IpMode UseDhcp -ErrorAction Stop | Out-Null
+            } else {
+                Write-Host "Configuring NIC mapping for Static IP [$staticIp]..." -ForegroundColor Cyan
                 $subnet = if ($body.subnet) { ("" + $body.subnet).Trim() } else { "255.255.255.0" }
                 $gw = if ($body.gateway) { ("" + $body.gateway).Trim() } else { $null }
-                $dnsList = @()
-                if ($body.dns) {
-                    $dnsList = @(("" + $body.dns).Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-                }
 
                 $nicParams = @{
-                    IpMode = "UseStatic"
-                    IpAddress = $staticIp
-                    SubnetMask = $subnet
+                    IpMode      = "UseStatic"
+                    IpAddress   = $staticIp
+                    SubnetMask  = $subnet
                     ErrorAction = "Stop"
                 }
                 if ($gw) { $nicParams["DefaultGateway"] = $gw }
-                if ($dnsList.Count -gt 0) { $nicParams["Dns"] = $dnsList }
+                # Only pass -Dns to Set-OSCustomizationNicMapping if Windows (Linux must not provide Dns on NIC mapping)
+                if ($osType -eq "Windows" -and $dnsList.Count -gt 0) {
+                    $nicParams["Dns"] = $dnsList
+                }
 
                 $nicMap | Set-OSCustomizationNicMapping @nicParams | Out-Null
-            } else {
-                $nicMap | Set-OSCustomizationNicMapping -IpMode UseDhcp -ErrorAction Stop | Out-Null
             }
 
             $vmParams = @{
@@ -634,12 +1005,25 @@ while ($listener.IsListening) {
             }
 
             if ($body.targetHost) {
-                $targetH = Get-VMHost -Name $body.targetHost -ErrorAction SilentlyContinue | Select-Object -First 1
+                $targetH = Get-VMHost -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq $body.targetHost } | Select-Object -First 1
+                if (-not $targetH) {
+                    try {
+                        $escH = [System.Management.Automation.WildcardPattern]::Escape($body.targetHost)
+                        $targetH = Get-VMHost -Name $escH -ErrorAction SilentlyContinue | Select-Object -First 1
+                    } catch {}
+                }
                 if ($targetH) { $vmParams["VMHost"] = $targetH }
             }
 
             if ($body.datastore) {
-                $targetDs = Get-Datastore -Name $body.datastore -ErrorAction SilentlyContinue | Select-Object -First 1
+                $dsName = ("" + $body.datastore).Trim()
+                $targetDs = Get-Datastore -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq $dsName } | Select-Object -First 1
+                if (-not $targetDs) {
+                    try {
+                        $escDs = [System.Management.Automation.WildcardPattern]::Escape($dsName)
+                        $targetDs = Get-Datastore -Name $escDs -ErrorAction SilentlyContinue | Select-Object -First 1
+                    } catch {}
+                }
                 if ($targetDs) { $vmParams["Datastore"] = $targetDs }
             }
 
@@ -651,7 +1035,15 @@ while ($listener.IsListening) {
                 Write-Host "Assigning PortGroup [$targetPg] to cloned VM [$dstName]..." -ForegroundColor Cyan
                 $nic = Get-NetworkAdapter -VM $clonedVm -ErrorAction SilentlyContinue | Select-Object -First 1
                 if ($nic) {
-                    $nic | Set-NetworkAdapter -PortGroup $targetPg -Confirm:$false -ErrorAction Stop | Out-Null
+                    $pgObj = Get-VirtualPortGroup -Name $targetPg -ErrorAction SilentlyContinue | Select-Object -First 1
+                    if (-not $pgObj -and (Get-Command Get-VDPortgroup -ErrorAction SilentlyContinue)) {
+                        $pgObj = Get-VDPortgroup -Name $targetPg -ErrorAction SilentlyContinue | Select-Object -First 1
+                    }
+                    if ($pgObj) {
+                        $nic | Set-NetworkAdapter -PortGroup $pgObj -Confirm:$false -ErrorAction Stop | Out-Null
+                    } else {
+                        $nic | Set-NetworkAdapter -PortGroup $targetPg -Confirm:$false -ErrorAction Stop | Out-Null
+                    }
                 }
             }
 
@@ -666,17 +1058,22 @@ while ($listener.IsListening) {
             Send-JsonResponse $response @{
                 success   = $true
                 vmName    = $dstName
-                hostName  = $hostName
-                ip        = if ($staticIp) { $staticIp } else { "DHCP" }
+                hostName  = $cleanHostName
+                ip        = if ($isDhcp) { "DHCP (自動取得)" } else { $staticIp }
                 portGroup = if ($targetPg) { $targetPg } else { "Original" }
                 powerOn   = $isPowerOn
-                message   = "VM [$dstName] provisioned successfully! OS Customization (Hostname: $hostName, IP: $(if ($staticIp) { $staticIp } else { 'DHCP' })) applied."
+                message   = "VM [$dstName] 開通成功！OS 自訂規格 (Hostname: $cleanHostName, IP: $(if ($isDhcp) { 'DHCP (自動取得)' } else { $staticIp })) 已套用。"
             }
         } catch {
             Write-Host "Provision error: $($_.Exception.Message)" -ForegroundColor Red
+            $rawErr = $_.Exception.Message
+            $friendlyErr = $rawErr
+            if ($rawErr -like "*not supported on the object*" -or $rawErr -like "*CloneVM_Task*" -or $rawErr -like "*vCenter Server*") {
+                $friendlyErr = "克隆與 Sysprep 自訂規格需透過 vCenter Server 執行。若直接連線至單台 ESXi 主機，因 VMware 原生架構限制不支援 CloneVM_Task API，請切換連線至 vCenter Server 管理平台。"
+            }
             Send-JsonResponse $response @{
                 success = $false
-                message = $_.Exception.Message
+                message = $friendlyErr
             }
         }
         continue

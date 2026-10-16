@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
@@ -720,80 +720,101 @@
                         <span class="hint">選擇作為母體的 Windows Server / Win11 / Linux 範本</span>
                     </div>
 
-                    <!-- 2. 目標主機 -->
+                    <!-- 2. 作業系統類型 -->
                     <div class="form-group">
-                        <label for="provTargetHostSelect">2. 目標 ESXi 主機 (Target Host)</label>
+                        <label for="provOsType">2. 作業系統架構 (OS Type)</label>
+                        <select id="provOsType">
+                            <option value="auto">🤖 自動判斷 (Linux / Windows 智慧辨識)</option>
+                            <option value="Linux">🐧 Linux (Ubuntu / Debian / CentOS / RHEL / SUSE)</option>
+                            <option value="Windows">🪟 Windows (Server 2016-2025 / Win10/11 Sysprep)</option>
+                        </select>
+                        <span class="hint">系統將套用對應的 Linux Customization 或 Windows Sysprep 規格</span>
+                    </div>
+
+                    <!-- 3. 目標主機 -->
+                    <div class="form-group">
+                        <label for="provTargetHostSelect">3. 目標 ESXi 主機 (Target Host)</label>
                         <select id="provTargetHostSelect">
                             <option value="">(預設使用來源 VM 所在主機)</option>
                         </select>
                     </div>
 
-                    <!-- 3. 新 VM 名稱 -->
+                    <!-- 4. 儲存 Datastore -->
                     <div class="form-group">
-                        <label for="provNewVmName">3. 新虛擬機名稱 (VM Name) <span class="required">*</span></label>
-                        <input type="text" id="provNewVmName" placeholder="例如：David-DC01 或 Lab-Win11" required>
-                    </div>
-
-                    <!-- 4. 電腦名稱 Hostname -->
-                    <div class="form-group">
-                        <label for="provHostName">4. 電腦主機名稱 (Computer Name) <span class="required">*</span></label>
-                        <input type="text" id="provHostName" placeholder="例如：David-DC01 (自動同步)" required>
-                        <span class="hint">Sysprep 套用的內部電腦名稱</span>
-                    </div>
-
-                    <!-- 5. 儲存 Datastore -->
-                    <div class="form-group">
-                        <label for="provDatastoreSelect">5. 目標儲存空間 (Datastore)</label>
+                        <label for="provDatastoreSelect">4. 目標儲存空間 (Datastore)</label>
                         <select id="provDatastoreSelect">
                             <option value="">(預設使用來源 VM 所在 Datastore)</option>
                         </select>
                     </div>
 
-                    <!-- 6. 網路指派 vSwitch -->
+                    <!-- 5. 新 VM 名稱 -->
                     <div class="form-group">
-                        <label for="provVswitchSelect">6. 指派 vSwitch</label>
+                        <label for="provNewVmName">5. 新虛擬機名稱 (VM Name) <span class="required">*</span></label>
+                        <input type="text" id="provNewVmName" placeholder="例如：David-DC01 或 Lab-Win11" required>
+                    </div>
+
+                    <!-- 6. 電腦名稱 Hostname -->
+                    <div class="form-group">
+                        <label for="provHostName">6. 電腦主機名稱 (Computer Name) <span class="required">*</span></label>
+                        <input type="text" id="provHostName" placeholder="例如：david-dc01 (自動轉換 RFC 1123 規範)" required>
+                        <span class="hint">RFC 1123 規範：僅能包含英數字與連字號 (-)，不可含底線 (_) 或空格</span>
+                    </div>
+
+                    <!-- 7. 網路指派 vSwitch -->
+                    <div class="form-group">
+                        <label for="provVswitchSelect">7. 指派 vSwitch</label>
                         <select id="provVswitchSelect">
                             <option value="">-- 請先選擇 vSwitch --</option>
                         </select>
                     </div>
 
-                    <!-- 7. 網路指派 PortGroup -->
+                    <!-- 8. 網路指派 PortGroup -->
                     <div class="form-group">
-                        <label for="provPortGroupSelect">7. 指派 VLAN (Port Group) <span class="required">*</span></label>
+                        <label for="provPortGroupSelect">8. 指派 VLAN (Port Group) <span class="required">*</span></label>
                         <select id="provPortGroupSelect" required disabled>
                             <option value="">-- 請先選擇 vSwitch --</option>
                         </select>
                     </div>
 
-                    <!-- 8. 靜態 IP -->
-                    <div class="form-group">
-                        <label for="provIp">8. 靜態 IPv4 位址 <span class="required">*</span></label>
-                        <input type="text" id="provIp" placeholder="例如：192.168.10.150" required>
-                    </div>
-
-                    <!-- 9. 子網路遮罩 -->
-                    <div class="form-group">
-                        <label for="provSubnet">9. 子網路遮罩 (Subnet Mask)</label>
-                        <input type="text" id="provSubnet" value="255.255.255.0">
-                    </div>
-
-                    <!-- 10. 預設閘道 -->
-                    <div class="form-group">
-                        <label for="provGateway">10. 預設閘道 (Default Gateway)</label>
-                        <input type="text" id="provGateway" placeholder="例如：192.168.10.1">
-                    </div>
-
-                    <!-- 11. DNS 伺服器 -->
+                    <!-- 9. IP 配發模式 (DHCP / Static IP) -->
                     <div class="form-group full-width">
-                        <label for="provDns">11. DNS 伺服器 (以逗號分隔)</label>
-                        <input type="text" id="provDns" value="192.168.10.1, 8.8.8.8" placeholder="例如：192.168.10.1, 8.8.8.8">
+                        <label for="provIpMode">9. IP 配發模式 (IP Mode) <span class="required">*</span></label>
+                        <select id="provIpMode">
+                            <option value="dhcp" selected>🌐 自動取得 IP (DHCP) - 推薦 (適用含 DHCP 的 VLAN)</option>
+                            <option value="static">📌 指定靜態 IP (Static IPv4) - 手動設定 IP/閘道/DNS</option>
+                        </select>
+                        <span class="hint">若目標 VLAN 具備 DHCP 伺服器可直接自動取得 IP；若需固定 IP 請切換為「指定靜態 IP」。</span>
                     </div>
 
-                    <!-- 12. 選項 -->
+                    <!-- 靜態 IP 細部欄位容器 (選 static 時展開) -->
+                    <div id="provStaticIpContainer" style="display: none; grid-column: span 2;" class="form-grid">
+                        <div class="form-group">
+                            <label for="provIp">靜態 IPv4 位址 <span class="required">*</span></label>
+                            <input type="text" id="provIp" placeholder="例如：192.168.10.150">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="provSubnet">子網路遮罩 (Subnet Mask)</label>
+                            <input type="text" id="provSubnet" value="255.255.255.0">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="provGateway">預設閘道 (Default Gateway)</label>
+                            <input type="text" id="provGateway" placeholder="例如：192.168.10.1">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="provDns">DNS 伺服器 (以逗號分隔)</label>
+                            <input type="text" id="provDns" value="8.8.8.8, 1.1.1.1" placeholder="例如：192.168.10.1, 8.8.8.8">
+                        </div>
+                    </div>
+
+                    <!-- 10. 開機與進階選項 -->
                     <div class="form-group full-width">
-                        <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9rem; cursor: pointer; color: #f8fafc;">
+                        <label>10. 開機與進階選項 (Options)</label>
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9rem; cursor: pointer; color: #f8fafc; margin-top: 4px;">
                             <input type="checkbox" id="provAutoPowerOn" checked>
-                            <span>⚡ 克隆完成後自動開機（觸發 Windows Sysprep 自動設定 IP、Hostname 與全新 SID）</span>
+                            <span>⚡ 克隆完成後自動開機（自動觸發作業系統自訂規格、設定 IP 與主機名稱）</span>
                         </label>
                     </div>
 
@@ -874,12 +895,12 @@
             </div>
             
             <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
-                選取一台運作中的 ESXi 主機作為範本，自動讀取其上的所有 Standard Switch 與 PortGroup (VLAN) 並匯入清單。
+                選取單一 ESXi 主機或「全部主機 / vCenter 全域」，自動深層提取所有 Standard Switch (VSS) 與 Distributed Switch (vDS) 上的 PortGroup (VLAN) 並匯入清單。
             </p>
 
             <form id="cloneHostForm">
                 <div class="form-group" style="margin-bottom: 14px;">
-                    <label for="cloneSourceHostSelect">來源 ESXi 主機 (Source Host) <span class="required">*</span></label>
+                    <label for="cloneSourceHostSelect">來源主機 / 掃描範圍 (Source Scope) <span class="required">*</span></label>
                     <select id="cloneSourceHostSelect" required>
                         <option value="">-- 請先連線以載入主機 --</option>
                     </select>
@@ -1015,7 +1036,14 @@
                 cloneSourceHostSelect.innerHTML = '<option value="">-- 無可用主機 (請先連線) --</option>';
                 return;
             }
-            cloneSourceHostSelect.innerHTML = '<option value="">-- 請選擇來源 ESXi 主機 --</option>';
+            cloneSourceHostSelect.innerHTML = '<option value="">-- 請選擇來源主機或全域掃描 --</option>';
+            
+            // 全域掃描選項
+            const optAll = document.createElement('option');
+            optAll.value = '_ALL_';
+            optAll.textContent = '🌟 全部主機 / vCenter 全域 (完整掃描所有主機與分散式交換機 vDS)';
+            cloneSourceHostSelect.appendChild(optAll);
+
             cachedHosts.forEach(h => {
                 const opt = document.createElement('option');
                 opt.value = h;
@@ -1039,7 +1067,7 @@
             e.preventDefault();
             const sourceHost = cloneSourceHostSelect.value;
             if (!sourceHost) {
-                alert('請選擇來源主機！');
+                alert('請選擇來源主機或全域掃描！');
                 return;
             }
 
@@ -1063,10 +1091,11 @@
                 const data = await res.json();
 
                 if (data.success) {
+                    const hostLabel = sourceHost === '_ALL_' ? '全部主機 / vCenter 全域' : sourceHost;
                     if (data.count === 0) {
-                        alert(`來源主機 [${sourceHost}] 未讀取到任何 Standard Port Group / VLAN 設定。`);
+                        alert(`來源 [${hostLabel}] 未讀取到任何 Port Group / VLAN 設定。`);
                     } else {
-                        const headerComment = `# --- 複製自來源主機: ${sourceHost} (${data.count} 筆) ---`;
+                        const headerComment = `# --- 複製自來源: ${hostLabel} (${data.count} 筆) ---`;
                         if (mode === 'replace') {
                             vlanInputList.value = headerComment + '\n' + data.text;
                         } else {
@@ -1075,7 +1104,7 @@
                         }
                         parseVlanList();
                         cloneModalOverlay.style.display = 'none';
-                        alert(`✅ 成功從 [${sourceHost}] 匯入 ${data.count} 筆 VLAN 設定！\n已自動更新即時預覽表格並儲存草稿。`);
+                        alert(`✅ 成功從 [${hostLabel}] 匯入 ${data.count} 筆完整 VLAN 設定！\n已自動更新即時預覽表格並儲存草稿。`);
                     }
                 } else {
                     alert('讀取失敗：' + data.message);
@@ -1664,16 +1693,63 @@
             }
         });
 
-        // 分頁 3：VM 名稱與電腦名稱自動同步
+        // 分頁 3：來源 VM 選擇時智慧切換 OS Type
+        document.getElementById('provSourceVmSelect').addEventListener('change', function() {
+            const val = (this.value || '').toLowerCase();
+            const osSelect = document.getElementById('provOsType');
+            if (val.match(/ubuntu|debian|centos|rhel|redhat|sles|suse|photon|fedora|oracle|rocky|alma|linux/)) {
+                osSelect.value = 'Linux';
+            } else if (val.match(/win|srv|server|2016|2019|2022|2025/)) {
+                osSelect.value = 'Windows';
+            } else {
+                osSelect.value = 'auto';
+            }
+        });
+
+        // 輔助函式：將任意字串轉為符合 RFC 1123 的標準 Hostname (去除底線、點、空格，僅保留英數字與連字號)
+        function sanitizeHostName(val, osType) {
+            let s = (val || '')
+                .replace(/[^a-zA-Z0-9-]/g, '-')
+                .replace(/-+/g, '-')
+                .replace(/^-+|-+$/g, '');
+            if (osType === 'Windows') {
+                if (s.length > 15) s = s.substring(0, 15).replace(/-+$/, '');
+            } else {
+                s = s.toLowerCase();
+                if (s.length > 63) s = s.substring(0, 63).replace(/-+$/, '');
+            }
+            return s;
+        }
+
+        // 分頁 3：VM 名稱與電腦名稱自動同步 (含 RFC 1123 合規轉譯)
         const provNewVmName = document.getElementById('provNewVmName');
         const provHostName = document.getElementById('provHostName');
         provNewVmName.addEventListener('input', function() {
             if (!provHostName.dataset.userEdited) {
-                provHostName.value = this.value;
+                const osType = document.getElementById('provOsType').value;
+                provHostName.value = sanitizeHostName(this.value, osType);
             }
         });
         provHostName.addEventListener('input', function() {
             this.dataset.userEdited = 'true';
+        });
+        provHostName.addEventListener('blur', function() {
+            const osType = document.getElementById('provOsType').value;
+            this.value = sanitizeHostName(this.value, osType);
+        });
+
+        // 分頁 3：IP 配發模式切換 (DHCP vs Static IP)
+        const provIpMode = document.getElementById('provIpMode');
+        const provStaticIpContainer = document.getElementById('provStaticIpContainer');
+        const provIp = document.getElementById('provIp');
+        provIpMode.addEventListener('change', function() {
+            if (this.value === 'static') {
+                provStaticIpContainer.style.display = 'grid';
+                provIp.required = true;
+            } else {
+                provStaticIpContainer.style.display = 'none';
+                provIp.required = false;
+            }
         });
 
         // 分頁 3：vSwitch 與 PortGroup 二級連動
@@ -1707,15 +1783,17 @@
 
             const sourceVm = document.getElementById('provSourceVmSelect').value;
             const targetHost = document.getElementById('provTargetHostSelect').value;
+            const osType = document.getElementById('provOsType').value;
             const newVmName = document.getElementById('provNewVmName').value.trim();
             const hostName = document.getElementById('provHostName').value.trim();
             const datastore = document.getElementById('provDatastoreSelect').value;
             const vswitch = document.getElementById('provVswitchSelect').value;
             const portGroup = document.getElementById('provPortGroupSelect').value;
-            const ip = document.getElementById('provIp').value.trim();
-            const subnet = document.getElementById('provSubnet').value.trim();
-            const gateway = document.getElementById('provGateway').value.trim();
-            const dns = document.getElementById('provDns').value.trim();
+            const ipMode = document.getElementById('provIpMode').value;
+            const ip = ipMode === 'static' ? document.getElementById('provIp').value.trim() : '';
+            const subnet = ipMode === 'static' ? document.getElementById('provSubnet').value.trim() : '';
+            const gateway = ipMode === 'static' ? document.getElementById('provGateway').value.trim() : '';
+            const dns = ipMode === 'static' ? document.getElementById('provDns').value.trim() : '';
             const autoPowerOn = document.getElementById('provAutoPowerOn').checked;
 
             const spinner = document.getElementById('provSpinner');
@@ -1733,8 +1811,8 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        sourceVm, targetHost, newVmName, hostName,
-                        datastore, vswitch, portGroup, ip, subnet, gateway, dns, autoPowerOn
+                        sourceVm, targetHost, osType, newVmName, hostName,
+                        datastore, vswitch, portGroup, ipMode, ip, subnet, gateway, dns, autoPowerOn
                     })
                 });
                 const data = await res.json();
@@ -1746,11 +1824,11 @@
                     document.getElementById('provResMsg').innerHTML = `
                         <strong>虛擬機名稱：</strong> ${data.vmName}<br>
                         <strong>電腦名稱 (Hostname)：</strong> ${data.hostName}<br>
-                        <strong>靜態 IP 位址：</strong> ${data.ip}<br>
+                        <strong>網路 IP 設定：</strong> ${data.ip}<br>
                         <strong>所屬 VLAN (PortGroup)：</strong> ${data.portGroup}<br>
-                        <strong>開機狀態：</strong> ${data.powerOn ? '已自動開機 (正在執行 Sysprep 設定)' : '未開機'}<br>
+                        <strong>開機狀態：</strong> ${data.powerOn ? '已自動開機 (正在執行 OS 自訂規格設定)' : '未開機'}<br>
                         <p style="margin-top: 8px; color: #94a3b8;">
-                            💡 Sysprep 在初次開機後會自動完成電腦名稱修改、網路卡綁定與全新 SID 生成，約 1~2 分鐘後即可使用連線。
+                            💡 作業系統自訂引擎 (Sysprep / cloud-init) 在初次開機後會自動完成主機名稱、網路卡綁定與 SID 重設，約 1~2 分鐘後即可使用連線。
                         </p>
                     `;
                     resBox.scrollIntoView({ behavior: 'smooth' });

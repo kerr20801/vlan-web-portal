@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Backend script: Change VM network adapter to target vSwitch / Port Group,
     then execute connectivity test (Ping/ICMP, SSH/22, RDP/3389, Custom TCP).
@@ -155,17 +155,35 @@ try {
     if (-not $vswitch) {
         $vswitch = Get-VirtualSwitch -Name $VSwitchName -ErrorAction SilentlyContinue
     }
+    if (-not $vswitch -and (Get-Command Get-VDSwitch -ErrorAction SilentlyContinue)) {
+        if ($targetHost) {
+            $vswitch = Get-VDSwitch -VMHost $targetHost -Name $VSwitchName -ErrorAction SilentlyContinue | Select-Object -First 1
+        }
+        if (-not $vswitch) {
+            $vswitch = Get-VDSwitch -Name $VSwitchName -ErrorAction SilentlyContinue | Select-Object -First 1
+        }
+    }
 
     if (-not $vswitch) {
-        Write-Result -Success $false -Message "vSwitch '$VSwitchName' not found."
+        Write-Result -Success $false -Message "vSwitch/vDS '$VSwitchName' not found."
         exit 1
     }
 
-    $portGroup = Get-VirtualPortGroup -VirtualSwitch $vswitch -Name $PortGroupName -ErrorAction SilentlyContinue
+    $portGroup = $null
+    if ($vswitch) {
+        if ($vswitch.GetType().Name -like "*VDSwitch*") {
+            $portGroup = Get-VDPortgroup -VDSwitch $vswitch -Name $PortGroupName -ErrorAction SilentlyContinue | Select-Object -First 1
+        } else {
+            $portGroup = Get-VirtualPortGroup -VirtualSwitch $vswitch -Name $PortGroupName -ErrorAction SilentlyContinue | Select-Object -First 1
+        }
+    }
     if (-not $portGroup) {
         $portGroup = Get-VirtualPortGroup -Name $PortGroupName -ErrorAction SilentlyContinue | Where-Object { 
-            $_.VirtualSwitchName -eq $VSwitchName -or $_.VirtualSwitch.Name -eq $VSwitchName 
+            $_.VirtualSwitchName -eq $VSwitchName -or $_.VirtualSwitch -eq $VSwitchName -or $_.VirtualSwitch.Name -eq $VSwitchName 
         } | Select-Object -First 1
+    }
+    if (-not $portGroup -and (Get-Command Get-VDPortgroup -ErrorAction SilentlyContinue)) {
+        $portGroup = Get-VDPortgroup -Name $PortGroupName -ErrorAction SilentlyContinue | Select-Object -First 1
     }
 
     if (-not $portGroup) {
