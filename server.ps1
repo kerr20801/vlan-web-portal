@@ -137,6 +137,9 @@ while ($listener.IsListening) {
             Write-Host "Querying VM inventory..." -ForegroundColor Gray
             $vms = Get-VM -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name | Sort-Object
 
+            Write-Host "Querying Datastores inventory..." -ForegroundColor Gray
+            $datastores = Get-Datastore -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name | Sort-Object
+
             Write-Host "Querying vSwitch and PortGroup topology..." -ForegroundColor Gray
             $networkMap = [ordered]@{}
             $vswitches = Get-VirtualSwitch -ErrorAction SilentlyContinue
@@ -150,6 +153,7 @@ while ($listener.IsListening) {
                 serverType = if ($conn.ProductLine -eq "esx") { "ESXi" } else { "vCenter" }
                 hosts      = @($hosts)
                 vms        = @($vms)
+                datastores = @($datastores)
                 networkMap = $networkMap
             }
             Write-Host "Connected and inventory loaded successfully!" -ForegroundColor Green
@@ -383,6 +387,155 @@ while ($listener.IsListening) {
                 success   = $false
                 message   = $_.Exception.Message
                 timestamp = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+            }
+        }
+        continue
+    }
+
+    # 5. API: Clone VM with OS Customization (Hostname, Static IP, PortGroup)
+    if ($rawUrl -eq "/api/clone-vm-custom" -and $request.HttpMethod -eq "POST") {
+        $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
+        $body = $reader.ReadToEnd() | ConvertFrom-Json
+
+        if (-not $global:ActiveVIServer) {
+            Send-JsonResponse $response @{
+                success = $false
+                message = "Not connected to any vCenter/ESXi yet. Please connect first."
+            }
+            continue
+        }
+
+        try {
+            $srcName = ("" + $body.sourceVm).Trim()
+            $dstName = ("" + $body.newVmName).Trim()
+            $hostName = ("" + $body.hostName).Trim()
+            if (-not $hostName) { $hostName = $dstName }
+
+            if (-not $srcName -or -not $dstName) {
+                Send-JsonResponse $response @{
+                    success = $false
+                    message = "Source VM and New VM Name are required."
+                }
+                continue
+            }
+
+            Write-Host "Fetching source VM [$srcName]..." -ForegroundColor Cyan
+            $srcVm = Get-VM -Name $srcName -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $srcVm) {
+                Send-JsonResponse $response @{
+                    success = $false
+                    message = "Source VM '$srcName' not found."
+                }
+                continue
+            }
+
+            $existingDst = Get-VM -Name $dstName -ErrorAction SilentlyContinue
+            if ($existingDst) {
+                Send-JsonResponse $response @{
+                    success = $false
+                    message = "A VM named '$dstName' already exists. Please choose a different name."
+                }
+                continue
+            }
+
+            Write-Host "Building NonPersistent OS Customization Spec for [$dstName]..." -ForegroundColor Cyan
+            $osType = "Windows"
+            if ($srcVm.GuestId -and $srcVm.GuestId -like "*linux*") {
+                $osType = "Linux"
+            }
+
+            $specParams = @{
+                Type = "NonPersistent"
+                OSType = $osType
+                NamingScheme = "Fixed"
+                NamingPrefix = $hostName
+                ErrorAction = "Stop"
+            }
+            if ($osType -eq "Windows") {
+                $specParams["TimeZone"] = 205
+                $specParams["Workgroup"] = "WORKGROUP"
+            } else {
+                $specParams["Domain"] = "local"
+            }
+
+            $spec = New-OSCustomizationSpec @specParams
+
+            $nicMap = Get-OSCustomizationNicMapping -OSCustomizationSpec $spec | Select-Object -First 1
+            $staticIp = ("" + $body.ip).Trim()
+
+            if ($staticIp) {
+                $subnet = if ($body.subnet) { ("" + $body.subnet).Trim() } else { "255.255.255.0" }
+                $gw = if ($body.gateway) { ("" + $body.gateway).Trim() } else { $null }
+                $dnsList = @()
+                if ($body.dns) {
+                    $dnsList = @(("" + $body.dns).Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+                }
+
+                $nicParams = @{
+                    IpMode = "UseStatic"
+                    IpAddress = $staticIp
+                    SubnetMask = $subnet
+                    ErrorAction = "Stop"
+                }
+                if ($gw) { $nicParams["DefaultGateway"] = $gw }
+                if ($dnsList.Count -gt 0) { $nicParams["Dns"] = $dnsList }
+
+                $nicMap | Set-OSCustomizationNicMapping @nicParams | Out-Null
+            } else {
+                $nicMap | Set-OSCustomizationNicMapping -IpMode UseDhcp -ErrorAction Stop | Out-Null
+            }
+
+            $vmParams = @{
+                Name = $dstName
+                VM = $srcVm
+                OSCustomizationSpec = $spec
+                ErrorAction = "Stop"
+            }
+
+            if ($body.targetHost) {
+                $targetH = Get-VMHost -Name $body.targetHost -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($targetH) { $vmParams["VMHost"] = $targetH }
+            }
+
+            if ($body.datastore) {
+                $targetDs = Get-Datastore -Name $body.datastore -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($targetDs) { $vmParams["Datastore"] = $targetDs }
+            }
+
+            Write-Host "Cloning VM [$srcName] -> [$dstName] with CustomizationSpec..." -ForegroundColor Yellow
+            $clonedVm = New-VM @vmParams
+
+            $targetPg = ("" + $body.portGroup).Trim()
+            if ($targetPg) {
+                Write-Host "Assigning PortGroup [$targetPg] to cloned VM [$dstName]..." -ForegroundColor Cyan
+                $nic = Get-NetworkAdapter -VM $clonedVm -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($nic) {
+                    $nic | Set-NetworkAdapter -PortGroup $targetPg -Confirm:$false -ErrorAction Stop | Out-Null
+                }
+            }
+
+            $isPowerOn = [bool]$body.autoPowerOn
+            if ($isPowerOn) {
+                Write-Host "Powering on [$dstName] to execute Sysprep customization..." -ForegroundColor Green
+                Start-VM -VM $clonedVm -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+            }
+
+            Write-Host "VM [$dstName] provisioned successfully!" -ForegroundColor Green
+
+            Send-JsonResponse $response @{
+                success   = $true
+                vmName    = $dstName
+                hostName  = $hostName
+                ip        = if ($staticIp) { $staticIp } else { "DHCP" }
+                portGroup = if ($targetPg) { $targetPg } else { "Original" }
+                powerOn   = $isPowerOn
+                message   = "VM [$dstName] provisioned successfully! OS Customization (Hostname: $hostName, IP: $(if ($staticIp) { $staticIp } else { 'DHCP' })) applied."
+            }
+        } catch {
+            Write-Host "Provision error: $($_.Exception.Message)" -ForegroundColor Red
+            Send-JsonResponse $response @{
+                success = $false
+                message = $_.Exception.Message
             }
         }
         continue

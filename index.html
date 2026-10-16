@@ -466,6 +466,7 @@
     <div class="tabs">
         <button class="tab-btn active" id="tabBtnDeploy" onclick="switchTab('deploy')">🚀 批量部署 / 新增 VLAN (新主機專用)</button>
         <button class="tab-btn" id="tabBtnAssign" onclick="switchTab('assign')">🔌 VM 網卡切換 (既有 VM 專用)</button>
+        <button class="tab-btn" id="tabBtnProvision" onclick="switchTab('provision')">👥 虛擬機克隆與配網 (Lab Provisioner)</button>
     </div>
 
     <div class="container">
@@ -634,6 +635,116 @@
             <div id="resultBoxAssign" style="display:none; margin-top:20px; padding:18px; border-radius:8px; background:#0f172a; border:1px solid var(--border);">
                 <div style="font-weight: bold; margin-bottom: 6px;" id="assignResTitle"></div>
                 <div id="assignResMsg" style="font-size: 0.9rem; color: #cbd5e1;"></div>
+            </div>
+        </div>
+
+        <!-- 分頁 3：新人環境/虛擬機克隆與配網 -->
+        <div class="card" id="viewProvision" style="display: none;">
+            <div class="card-header">
+                <h2>👥 虛擬機自動克隆與配網 (VM Lab Provisioner)</h2>
+                <p>選取既有 VM 範本，透過 vCenter 原生自訂規格 (OS Customization) 自動套用新主機名稱、全新 SID 與靜態 IP，避免手動教新人的重複繁瑣作業。</p>
+            </div>
+
+            <form id="provisionForm">
+                <div class="form-grid">
+                    <!-- 1. 來源範本 -->
+                    <div class="form-group">
+                        <label for="provSourceVmSelect">1. 來源範本虛擬機 (Source VM) <span class="required">*</span></label>
+                        <select id="provSourceVmSelect" required>
+                            <option value="">-- 請先連線以載入 VM --</option>
+                        </select>
+                        <span class="hint">選擇作為母體的 Windows Server / Win11 / Linux 範本</span>
+                    </div>
+
+                    <!-- 2. 目標主機 -->
+                    <div class="form-group">
+                        <label for="provTargetHostSelect">2. 目標 ESXi 主機 (Target Host)</label>
+                        <select id="provTargetHostSelect">
+                            <option value="">(預設使用來源 VM 所在主機)</option>
+                        </select>
+                    </div>
+
+                    <!-- 3. 新 VM 名稱 -->
+                    <div class="form-group">
+                        <label for="provNewVmName">3. 新虛擬機名稱 (VM Name) <span class="required">*</span></label>
+                        <input type="text" id="provNewVmName" placeholder="例如：David-DC01 或 Lab-Win11" required>
+                    </div>
+
+                    <!-- 4. 電腦名稱 Hostname -->
+                    <div class="form-group">
+                        <label for="provHostName">4. 電腦主機名稱 (Computer Name) <span class="required">*</span></label>
+                        <input type="text" id="provHostName" placeholder="例如：David-DC01 (自動同步)" required>
+                        <span class="hint">Sysprep 套用的內部電腦名稱</span>
+                    </div>
+
+                    <!-- 5. 儲存 Datastore -->
+                    <div class="form-group">
+                        <label for="provDatastoreSelect">5. 目標儲存空間 (Datastore)</label>
+                        <select id="provDatastoreSelect">
+                            <option value="">(預設使用來源 VM 所在 Datastore)</option>
+                        </select>
+                    </div>
+
+                    <!-- 6. 網路指派 vSwitch -->
+                    <div class="form-group">
+                        <label for="provVswitchSelect">6. 指派 vSwitch</label>
+                        <select id="provVswitchSelect">
+                            <option value="">-- 請先選擇 vSwitch --</option>
+                        </select>
+                    </div>
+
+                    <!-- 7. 網路指派 PortGroup -->
+                    <div class="form-group">
+                        <label for="provPortGroupSelect">7. 指派 VLAN (Port Group) <span class="required">*</span></label>
+                        <select id="provPortGroupSelect" required disabled>
+                            <option value="">-- 請先選擇 vSwitch --</option>
+                        </select>
+                    </div>
+
+                    <!-- 8. 靜態 IP -->
+                    <div class="form-group">
+                        <label for="provIp">8. 靜態 IPv4 位址 <span class="required">*</span></label>
+                        <input type="text" id="provIp" placeholder="例如：192.168.10.150" required>
+                    </div>
+
+                    <!-- 9. 子網路遮罩 -->
+                    <div class="form-group">
+                        <label for="provSubnet">9. 子網路遮罩 (Subnet Mask)</label>
+                        <input type="text" id="provSubnet" value="255.255.255.0">
+                    </div>
+
+                    <!-- 10. 預設閘道 -->
+                    <div class="form-group">
+                        <label for="provGateway">10. 預設閘道 (Default Gateway)</label>
+                        <input type="text" id="provGateway" placeholder="例如：192.168.10.1">
+                    </div>
+
+                    <!-- 11. DNS 伺服器 -->
+                    <div class="form-group full-width">
+                        <label for="provDns">11. DNS 伺服器 (以逗號分隔)</label>
+                        <input type="text" id="provDns" value="192.168.10.1, 8.8.8.8" placeholder="例如：192.168.10.1, 8.8.8.8">
+                    </div>
+
+                    <!-- 12. 選項 -->
+                    <div class="form-group full-width">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9rem; cursor: pointer; color: #f8fafc;">
+                            <input type="checkbox" id="provAutoPowerOn" checked>
+                            <span>⚡ 克隆完成後自動開機（觸發 Windows Sysprep 自動設定 IP、Hostname 與全新 SID）</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group full-width" style="margin-top: 10px;">
+                        <button type="submit" class="btn btn-primary" id="btnSubmitProvision">
+                            <span id="provSpinner" style="display:none;" class="spinner"></span>
+                            <span id="provBtnLabel">🚀 立即執行克隆與自動配網</span>
+                        </button>
+                    </div>
+                </div>
+            </form>
+
+            <div id="resultBoxProvision" style="display:none; margin-top:20px; padding:18px; border-radius:8px; background:#0f172a; border:1px solid var(--border);">
+                <div style="font-weight: bold; margin-bottom: 8px; font-size: 1.05rem;" id="provResTitle"></div>
+                <div id="provResMsg" style="font-size: 0.9rem; color: #cbd5e1; line-height: 1.6;"></div>
             </div>
         </div>
     </div>
@@ -854,8 +965,10 @@
         function switchTab(tab) {
             document.getElementById('tabBtnDeploy').classList.toggle('active', tab === 'deploy');
             document.getElementById('tabBtnAssign').classList.toggle('active', tab === 'assign');
+            document.getElementById('tabBtnProvision').classList.toggle('active', tab === 'provision');
             document.getElementById('viewDeploy').style.display = tab === 'deploy' ? 'block' : 'none';
             document.getElementById('viewAssign').style.display = tab === 'assign' ? 'block' : 'none';
+            document.getElementById('viewProvision').style.display = tab === 'provision' ? 'block' : 'none';
         }
 
         // 解析文字清單 (支援逗號、Tab、空格)
@@ -1007,7 +1120,44 @@
                         vmDataList.appendChild(opt);
                     });
 
-                    alert(`連線成功！偵測到 ${data.hosts ? data.hosts.length : 0} 台 ESXi 主機。`);
+                    // 填入分頁 3 的 Provision 控制項
+                    const provSourceVmSelect = document.getElementById('provSourceVmSelect');
+                    provSourceVmSelect.innerHTML = '<option value="">-- 請選擇來源範本 VM --</option>';
+                    (data.vms || []).forEach(vm => {
+                        const opt = document.createElement('option');
+                        opt.value = vm;
+                        opt.textContent = `💻 ${vm}`;
+                        provSourceVmSelect.appendChild(opt);
+                    });
+
+                    const provTargetHostSelect = document.getElementById('provTargetHostSelect');
+                    provTargetHostSelect.innerHTML = '<option value="">(預設使用來源 VM 所在主機)</option>';
+                    (data.hosts || []).forEach(h => {
+                        const opt = document.createElement('option');
+                        opt.value = h;
+                        opt.textContent = `🖥️ ${h}`;
+                        provTargetHostSelect.appendChild(opt);
+                    });
+
+                    const provDatastoreSelect = document.getElementById('provDatastoreSelect');
+                    provDatastoreSelect.innerHTML = '<option value="">(預設使用來源 VM 所在 Datastore)</option>';
+                    (data.datastores || []).forEach(ds => {
+                        const opt = document.createElement('option');
+                        opt.value = ds;
+                        opt.textContent = `💾 ${ds}`;
+                        provDatastoreSelect.appendChild(opt);
+                    });
+
+                    const provVswitchSelect = document.getElementById('provVswitchSelect');
+                    provVswitchSelect.innerHTML = '<option value="">-- 請選擇 vSwitch --</option>';
+                    Object.keys(currentNetworkMap).forEach(vsw => {
+                        const opt = document.createElement('option');
+                        opt.value = vsw;
+                        opt.textContent = vsw;
+                        provVswitchSelect.appendChild(opt);
+                    });
+
+                    alert(`連線成功！偵測到 ${data.hosts ? data.hosts.length : 0} 台 ESXi 主機與 ${data.datastores ? data.datastores.length : 0} 個 Datastore。`);
                 } else {
                     alert('連線失敗：' + data.message);
                 }
@@ -1162,6 +1312,113 @@
                 resBox.style.display = 'block';
                 document.getElementById('assignResTitle').textContent = '⚠️ 異常';
                 document.getElementById('assignResMsg').textContent = err.message;
+            }
+        });
+
+        // 分頁 3：VM 名稱與電腦名稱自動同步
+        const provNewVmName = document.getElementById('provNewVmName');
+        const provHostName = document.getElementById('provHostName');
+        provNewVmName.addEventListener('input', function() {
+            if (!provHostName.dataset.userEdited) {
+                provHostName.value = this.value;
+            }
+        });
+        provHostName.addEventListener('input', function() {
+            this.dataset.userEdited = 'true';
+        });
+
+        // 分頁 3：vSwitch 與 PortGroup 二級連動
+        document.getElementById('provVswitchSelect').addEventListener('change', function() {
+            const vsw = this.value;
+            const pgSelect = document.getElementById('provPortGroupSelect');
+            pgSelect.innerHTML = '';
+            if (!vsw || !currentNetworkMap[vsw]) {
+                pgSelect.disabled = true;
+                pgSelect.innerHTML = '<option value="">-- 請先選擇 vSwitch --</option>';
+                return;
+            }
+            pgSelect.disabled = false;
+            pgSelect.innerHTML = '<option value="">-- 請選擇 VLAN --</option>';
+            currentNetworkMap[vsw].forEach(pg => {
+                const opt = document.createElement('option');
+                opt.value = pg;
+                opt.textContent = pg;
+                pgSelect.appendChild(opt);
+            });
+        });
+
+        // 分頁 3 提交：克隆並套用 OS 自訂規格
+        document.getElementById('provisionForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            if (!isConnected) {
+                alert('請先點擊右上角連線！');
+                modalOverlay.style.display = 'flex';
+                return;
+            }
+
+            const sourceVm = document.getElementById('provSourceVmSelect').value;
+            const targetHost = document.getElementById('provTargetHostSelect').value;
+            const newVmName = document.getElementById('provNewVmName').value.trim();
+            const hostName = document.getElementById('provHostName').value.trim();
+            const datastore = document.getElementById('provDatastoreSelect').value;
+            const vswitch = document.getElementById('provVswitchSelect').value;
+            const portGroup = document.getElementById('provPortGroupSelect').value;
+            const ip = document.getElementById('provIp').value.trim();
+            const subnet = document.getElementById('provSubnet').value.trim();
+            const gateway = document.getElementById('provGateway').value.trim();
+            const dns = document.getElementById('provDns').value.trim();
+            const autoPowerOn = document.getElementById('provAutoPowerOn').checked;
+
+            const spinner = document.getElementById('provSpinner');
+            const label = document.getElementById('provBtnLabel');
+            const btn = document.getElementById('btnSubmitProvision');
+            const resBox = document.getElementById('resultBoxProvision');
+
+            spinner.style.display = 'inline-block';
+            label.textContent = '克隆與自訂規格套用中 (可能需 1~3 分鐘)...';
+            btn.disabled = true;
+            resBox.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/clone-vm-custom', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sourceVm, targetHost, newVmName, hostName,
+                        datastore, vswitch, portGroup, ip, subnet, gateway, dns, autoPowerOn
+                    })
+                });
+                const data = await res.json();
+                resBox.style.display = 'block';
+
+                if (data.success) {
+                    document.getElementById('provResTitle').textContent = '🎉 虛擬機開通成功！';
+                    document.getElementById('provResTitle').style.color = 'var(--success)';
+                    document.getElementById('provResMsg').innerHTML = `
+                        <strong>虛擬機名稱：</strong> ${data.vmName}<br>
+                        <strong>電腦名稱 (Hostname)：</strong> ${data.hostName}<br>
+                        <strong>靜態 IP 位址：</strong> ${data.ip}<br>
+                        <strong>所屬 VLAN (PortGroup)：</strong> ${data.portGroup}<br>
+                        <strong>開機狀態：</strong> ${data.powerOn ? '已自動開機 (正在執行 Sysprep 設定)' : '未開機'}<br>
+                        <p style="margin-top: 8px; color: #94a3b8;">
+                            💡 Sysprep 在初次開機後會自動完成電腦名稱修改、網路卡綁定與全新 SID 生成，約 1~2 分鐘後即可使用 RDP 連線。
+                        </p>
+                    `;
+                    resBox.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    document.getElementById('provResTitle').textContent = '❌ 克隆部署失敗';
+                    document.getElementById('provResTitle').style.color = 'var(--danger)';
+                    document.getElementById('provResMsg').textContent = data.message;
+                }
+            } catch (err) {
+                resBox.style.display = 'block';
+                document.getElementById('provResTitle').textContent = '⚠️ 呼叫異常';
+                document.getElementById('provResTitle').style.color = 'var(--warning)';
+                document.getElementById('provResMsg').textContent = err.message;
+            } finally {
+                spinner.style.display = 'none';
+                label.textContent = '🚀 立即執行克隆與自動配網';
+                btn.disabled = false;
             }
         });
     </script>
