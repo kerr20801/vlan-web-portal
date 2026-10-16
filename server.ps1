@@ -988,7 +988,7 @@ while ($listener.IsListening) {
                     SubnetMask  = $subnet
                     ErrorAction = "Stop"
                 }
-                if ($gw) { $nicParams["DefaultGateway"] = $gw }
+                if ($gw) { $nicParams["DefaultGateway"] = @($gw) }
                 # Only pass -Dns to Set-OSCustomizationNicMapping if Windows (Linux must not provide Dns on NIC mapping)
                 if ($osType -eq "Windows" -and $dnsList.Count -gt 0) {
                     $nicParams["Dns"] = $dnsList
@@ -1075,6 +1075,151 @@ while ($listener.IsListening) {
                 success = $false
                 message = $friendlyErr
             }
+        }
+        continue
+    }
+
+    # 6. API: Check if IP is in use (Ping test to prevent IP conflict)
+    if ($rawUrl.StartsWith("/api/check-ip") -and $request.HttpMethod -eq "GET") {
+        $ip = ""
+        if ($request.Url.Query) {
+            $queryString = $request.Url.Query.TrimStart('?')
+            foreach ($pair in $queryString.Split('&')) {
+                $kv = $pair.Split('=', 2)
+                if ($kv[0] -eq "ip" -and $kv.Count -gt 1) {
+                    $ip = [System.Uri]::UnescapeDataString($kv[1]).Trim()
+                }
+            }
+        }
+
+        if (-not $ip) {
+            Send-JsonResponse $response @{ success = $false; message = "請提供欲檢測的 IP 位址" }
+            continue
+        }
+
+        $isAlive = $false
+        try {
+            $ping = New-Object System.Net.NetworkInformation.Ping
+            $reply = $ping.Send($ip, 500)
+            if ($reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) {
+                $isAlive = $true
+            }
+        } catch {}
+
+        Send-JsonResponse $response @{
+            success = $true
+            ip      = $ip
+            isAlive = $isAlive
+            isFree  = (-not $isAlive)
+            message = if ($isAlive) { "⚠️ 警告：該 IP 已有線上設備回應，請換一個 IP 避免衝突！" } else { "🟢 此 IP 目前無人使用，可安全配置！" }
+        }
+        continue
+    }
+
+    # 7. API: Auto scan and suggest next available free IP in subnet
+    if ($rawUrl.StartsWith("/api/scan-free-ip") -and $request.HttpMethod -eq "GET") {
+        $subnet = "192.168.10"
+        $start = 50
+        $count = 40
+        if ($request.Url.Query) {
+            $queryString = $request.Url.Query.TrimStart('?')
+            foreach ($pair in $queryString.Split('&')) {
+                $kv = $pair.Split('=', 2)
+                if ($kv[0] -eq "subnet" -and $kv.Count -gt 1) {
+                    $subnet = [System.Uri]::UnescapeDataString($kv[1]).Trim()
+                }
+                if ($kv[0] -eq "start" -and $kv.Count -gt 1) {
+                    [int]::TryParse($kv[1], [ref]$start) | Out-Null
+                }
+            }
+        }
+
+        $parts = $subnet.Split('.')
+        if ($parts.Count -ge 3) {
+            $subnetPrefix = "$($parts[0]).$($parts[1]).$($parts[2])"
+        } else {
+            $subnetPrefix = "192.168.10"
+        }
+
+        $freeIp = $null
+        $ping = New-Object System.Net.NetworkInformation.Ping
+        for ($i = $start; $i -lt ($start + $count) -and $i -le 254; $i++) {
+            $testIp = "$subnetPrefix.$i"
+            try {
+                $reply = $ping.Send($testIp, 200)
+                if ($reply.Status -ne [System.Net.NetworkInformation.IPStatus]::Success) {
+                    $freeIp = $testIp
+                    break
+                }
+            } catch {
+                $freeIp = $testIp
+                break
+            }
+        }
+
+        if ($freeIp) {
+            Send-JsonResponse $response @{
+                success = $true
+                freeIp  = $freeIp
+                gateway = "$subnetPrefix.1"
+                subnet  = "255.255.255.0"
+                dns     = "8.8.8.8, 1.1.1.1"
+            }
+        } else {
+            Send-JsonResponse $response @{
+                success = $false
+                message = "在探測範圍內未找到空閒 IP，請手動指定。"
+            }
+        }
+        continue
+    }
+
+    # 8. API: Poll VMware Tools for assigned Guest IP
+    if ($rawUrl.StartsWith("/api/vm-guest-ip") -and $request.HttpMethod -eq "GET") {
+        $vmName = ""
+        if ($request.Url.Query) {
+            $queryString = $request.Url.Query.TrimStart('?')
+            foreach ($pair in $queryString.Split('&')) {
+                $kv = $pair.Split('=', 2)
+                if ($kv[0] -eq "vmName" -and $kv.Count -gt 1) {
+                    $vmName = [System.Uri]::UnescapeDataString($kv[1]).Trim()
+                }
+            }
+        }
+
+        if (-not $vmName) {
+            Send-JsonResponse $response @{ success = $false; message = "請指定 VM 名稱" }
+            continue
+        }
+
+        try {
+            $targetVm = Get-VM -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq $vmName } | Select-Object -First 1
+            if (-not $targetVm) {
+                try {
+                    $escV = [System.Management.Automation.WildcardPattern]::Escape($vmName)
+                    $targetVm = Get-VM -Name $escV -ErrorAction SilentlyContinue | Select-Object -First 1
+                } catch {}
+            }
+            if (-not $targetVm) {
+                Send-JsonResponse $response @{ success = $false; message = "VM '$vmName' 不存在。" }
+                continue
+            }
+
+            $ipList = @($targetVm.Guest.IPAddress | Where-Object { $_ -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$' -and $_ -notlike "127.*" -and $_ -notlike "169.254.*" })
+            $powerState = [string]$targetVm.PowerState
+            $toolsStatus = [string]$targetVm.ExtensionData.Guest.ToolsRunningStatus
+
+            Send-JsonResponse $response @{
+                success     = $true
+                vmName      = $vmName
+                powerState  = $powerState
+                toolsStatus = $toolsStatus
+                hasIp       = ($ipList.Count -gt 0)
+                ipAddresses = $ipList
+                primaryIp   = if ($ipList.Count -gt 0) { $ipList[0] } else { $null }
+            }
+        } catch {
+            Send-JsonResponse $response @{ success = $false; message = $_.Exception.Message }
         }
         continue
     }

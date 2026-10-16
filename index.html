@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+﻿﻿<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
@@ -776,21 +776,33 @@
                         </select>
                     </div>
 
-                    <!-- 9. IP 配發模式 (DHCP / Static IP) -->
+                    <!-- 9. IP 配發模式 (Static IP / DHCP) -->
                     <div class="form-group full-width">
                         <label for="provIpMode">9. IP 配發模式 (IP Mode) <span class="required">*</span></label>
                         <select id="provIpMode">
-                            <option value="dhcp" selected>🌐 自動取得 IP (DHCP) - 推薦 (適用含 DHCP 的 VLAN)</option>
-                            <option value="static">📌 指定靜態 IP (Static IPv4) - 手動設定 IP/閘道/DNS</option>
+                            <option value="static" selected>📌 指定固定靜態 IP (Static IPv4) - 推薦 (直接配發，確保開機必定有 IP 可連線)</option>
+                            <option value="dhcp">🌐 自動取得 IP (DHCP) - 僅適用目標 VLAN 具備 DHCP 伺服器環境</option>
                         </select>
-                        <span class="hint">若目標 VLAN 具備 DHCP 伺服器可直接自動取得 IP；若需固定 IP 請切換為「指定靜態 IP」。</span>
+                        <span class="hint" id="provIpModeHint">💡 推薦固定 IP：企業與實驗室 VLAN 通常無 DHCP 伺服器，直接指定靜態 IP 可確保克隆後必定能連線。</span>
                     </div>
 
-                    <!-- 靜態 IP 細部欄位容器 (選 static 時展開) -->
-                    <div id="provStaticIpContainer" style="display: none; grid-column: span 2;" class="form-grid">
-                        <div class="form-group">
-                            <label for="provIp">靜態 IPv4 位址 <span class="required">*</span></label>
-                            <input type="text" id="provIp" placeholder="例如：192.168.10.150">
+                    <!-- 靜態 IP 細部欄位容器 (預設展開) -->
+                    <div id="provStaticIpContainer" style="display: grid; grid-column: span 2;" class="form-grid">
+                        <div class="form-group full-width">
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                                <label for="provIp" style="margin-bottom: 0;">靜態 IPv4 位址 <span class="required">*</span></label>
+                                <div style="display: flex; gap: 8px;">
+                                    <button type="button" class="btn btn-secondary btn-sm" id="btnScanFreeIp" title="自動掃描網段尋找未使用的空閒 IP">
+                                        ⚡ 自動尋找空閒 IP
+                                    </button>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="btnCheckIpConflict" title="Ping 測試該 IP 是否已被其他設備佔用">
+                                        🔍 檢查 IP 衝突
+                                    </button>
+                                </div>
+                            </div>
+                            <input type="text" id="provIp" placeholder="例如：192.168.10.150" required>
+                            <div id="ipCheckBadge" style="display: none; margin-top: 6px; padding: 6px 12px; border-radius: 6px; font-size: 0.85rem;"></div>
+                            <span class="hint">輸入 IP 後將自動推算預設閘道 (例如 .1) 與遮罩；亦可點擊上方按鈕自動探測可用 IP。</span>
                         </div>
 
                         <div class="form-group">
@@ -803,7 +815,7 @@
                             <input type="text" id="provGateway" placeholder="例如：192.168.10.1">
                         </div>
 
-                        <div class="form-group">
+                        <div class="form-group full-width">
                             <label for="provDns">DNS 伺服器 (以逗號分隔)</label>
                             <input type="text" id="provDns" value="8.8.8.8, 1.1.1.1" placeholder="例如：192.168.10.1, 8.8.8.8">
                         </div>
@@ -1738,17 +1750,164 @@
             this.value = sanitizeHostName(this.value, osType);
         });
 
-        // 分頁 3：IP 配發模式切換 (DHCP vs Static IP)
+        // 分頁 3：IP 配發模式切換 (Static IP vs DHCP)
         const provIpMode = document.getElementById('provIpMode');
         const provStaticIpContainer = document.getElementById('provStaticIpContainer');
         const provIp = document.getElementById('provIp');
+        const provIpModeHint = document.getElementById('provIpModeHint');
+
         provIpMode.addEventListener('change', function() {
             if (this.value === 'static') {
                 provStaticIpContainer.style.display = 'grid';
                 provIp.required = true;
+                if (provIpModeHint) {
+                    provIpModeHint.textContent = '💡 推薦固定 IP：企業與實驗室 VLAN 通常無 DHCP 伺服器，直接指定靜態 IP 可確保克隆後必定能連線。';
+                    provIpModeHint.style.color = 'var(--text-muted)';
+                }
             } else {
                 provStaticIpContainer.style.display = 'none';
                 provIp.required = false;
+                if (provIpModeHint) {
+                    provIpModeHint.textContent = '⚠️ 注意：僅在確認目標 VLAN 內部有架設 DHCP 伺服器時使用，否則 VM 開機後將無法取得 IP！';
+                    provIpModeHint.style.color = '#f59e0b';
+                }
+            }
+        });
+
+        // 智慧推算：輸入 IP 時自動帶入預設閘道 (.1) 與子網路遮罩 (255.255.255.0)
+        provIp.addEventListener('input', function() {
+            const val = this.value.trim();
+            const m = val.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3})\.(\d{1,3})$/);
+            if (m) {
+                const prefix = m[1];
+                const gwInput = document.getElementById('provGateway');
+                if (!gwInput.value || gwInput.dataset.autoFilled === 'true') {
+                    gwInput.value = prefix + '.1';
+                    gwInput.dataset.autoFilled = 'true';
+                }
+                const subnetInput = document.getElementById('provSubnet');
+                if (!subnetInput.value) {
+                    subnetInput.value = '255.255.255.0';
+                }
+            }
+        });
+        document.getElementById('provGateway').addEventListener('input', function() {
+            this.dataset.autoFilled = 'false';
+        });
+
+        // 一鍵自動尋找空閒 IP
+        document.getElementById('btnScanFreeIp').addEventListener('click', async function() {
+            const btn = this;
+            const provIp = document.getElementById('provIp');
+            const provGateway = document.getElementById('provGateway');
+            const provSubnet = document.getElementById('provSubnet');
+            const provDns = document.getElementById('provDns');
+            const badge = document.getElementById('ipCheckBadge');
+
+            let subnetPrefix = '';
+            const ipVal = provIp.value.trim();
+            const gwVal = provGateway.value.trim();
+            const m = ipVal.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3})/) || gwVal.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3})/);
+            if (m) {
+                subnetPrefix = m[1];
+            } else {
+                const pgSelect = document.getElementById('provPortGroupSelect').value;
+                const pgMatch = pgSelect.match(/(\d{1,3}\.\d{1,3}\.\d{1,3})/);
+                const defaultPrompt = pgMatch ? pgMatch[1] : '192.168.10';
+                const inputSubnet = prompt('請輸入欲探測空閒 IP 的網段前綴 (例如 192.168.10 或 10.0.1)：', defaultPrompt);
+                if (!inputSubnet) return;
+                subnetPrefix = inputSubnet.trim();
+            }
+
+            btn.disabled = true;
+            btn.textContent = '⚡ 掃描中...';
+            badge.style.display = 'block';
+            badge.style.background = '#1e293b';
+            badge.style.border = '1px solid #475569';
+            badge.style.color = '#cbd5e1';
+            badge.textContent = `⏳ 正在掃描網段 ${subnetPrefix}.x (快速 Ping 探測中)...`;
+
+            try {
+                const res = await fetch(`/api/scan-free-ip?subnet=${encodeURIComponent(subnetPrefix)}&start=50`);
+                const data = await res.json();
+                if (data.success && data.freeIp) {
+                    provIp.value = data.freeIp;
+                    provGateway.value = data.gateway;
+                    provGateway.dataset.autoFilled = 'true';
+                    provSubnet.value = data.subnet;
+                    if (!provDns.value) provDns.value = data.dns;
+
+                    badge.style.background = 'rgba(34, 197, 94, 0.15)';
+                    badge.style.border = '1px solid rgba(34, 197, 94, 0.4)';
+                    badge.style.color = '#4ade80';
+                    badge.innerHTML = `🟢 成功探測到可用空閒 IP：<strong>${data.freeIp}</strong>（預設閘道：${data.gateway}）`;
+                } else {
+                    badge.style.background = 'rgba(239, 68, 68, 0.15)';
+                    badge.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+                    badge.style.color = '#f87171';
+                    badge.textContent = data.message || '未找到可用空閒 IP，請手動指定。';
+                }
+            } catch (err) {
+                badge.style.background = 'rgba(239, 68, 68, 0.15)';
+                badge.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+                badge.style.color = '#f87171';
+                badge.textContent = '探測請求失敗：' + err.message;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '⚡ 自動尋找空閒 IP';
+            }
+        });
+
+        // 即時檢查 IP 是否已被佔用
+        document.getElementById('btnCheckIpConflict').addEventListener('click', async function() {
+            const btn = this;
+            const provIp = document.getElementById('provIp');
+            const ip = provIp.value.trim();
+            const badge = document.getElementById('ipCheckBadge');
+
+            if (!ip) {
+                alert('請先輸入欲檢查的 IP 位址！');
+                provIp.focus();
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = '🔍 檢測中...';
+            badge.style.display = 'block';
+            badge.style.background = '#1e293b';
+            badge.style.border = '1px solid #475569';
+            badge.style.color = '#cbd5e1';
+            badge.textContent = `⏳ 正在檢測 ${ip} 是否有設備在線...`;
+
+            try {
+                const res = await fetch(`/api/check-ip?ip=${encodeURIComponent(ip)}`);
+                const data = await res.json();
+                if (data.success) {
+                    if (data.isAlive) {
+                        badge.style.background = 'rgba(239, 68, 68, 0.15)';
+                        badge.style.border = '1px solid rgba(239, 68, 68, 0.5)';
+                        badge.style.color = '#f87171';
+                        badge.innerHTML = `⚠️ <strong>衝突警告：</strong> IP <strong>${ip}</strong> 目前已有線上設備回應！請更換其他 IP 避免網路衝突。`;
+                    } else {
+                        badge.style.background = 'rgba(34, 197, 94, 0.15)';
+                        badge.style.border = '1px solid rgba(34, 197, 94, 0.5)';
+                        badge.style.color = '#4ade80';
+                        badge.innerHTML = `🟢 <strong>檢測通過：</strong> IP <strong>${ip}</strong> 目前無任何設備回應，可安全配置！`;
+                    }
+                } else {
+                    badge.style.background = 'rgba(239, 68, 68, 0.15)';
+                    badge.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+                    badge.style.color = '#f87171';
+                    badge.textContent = data.message || '檢測失敗';
+                }
+            } catch (err) {
+                badge.style.background = 'rgba(239, 68, 68, 0.15)';
+                badge.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+                badge.style.color = '#f87171';
+                badge.textContent = '檢測異常：' + err.message;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔍 檢查 IP 衝突';
             }
         });
 
@@ -1771,6 +1930,75 @@
                 pgSelect.appendChild(opt);
             });
         });
+
+        // 選擇 PortGroup 時提示相關子網路
+        document.getElementById('provPortGroupSelect').addEventListener('change', function() {
+            const pg = this.value;
+            const provIp = document.getElementById('provIp');
+            const provGateway = document.getElementById('provGateway');
+            if (pg && !provIp.value) {
+                const ipMatch = pg.match(/(\d{1,3}\.\d{1,3}\.\d{1,3})/);
+                if (ipMatch) {
+                    provIp.placeholder = `例如：${ipMatch[1]}.150`;
+                    if (!provGateway.value) provGateway.placeholder = `例如：${ipMatch[1]}.1`;
+                }
+            }
+        });
+
+        // VMware Tools IP 即時輪詢監控器
+        let vmToolsPollTimer = null;
+        function startVmToolsPolling(vmName, osType) {
+            if (vmToolsPollTimer) clearInterval(vmToolsPollTimer);
+            let attempts = 0;
+            const maxAttempts = 25;
+            const trackerMsg = document.getElementById('vmLiveTrackerMsg');
+
+            vmToolsPollTimer = setInterval(async () => {
+                attempts++;
+                if (attempts > maxAttempts) {
+                    clearInterval(vmToolsPollTimer);
+                    if (trackerMsg) {
+                        trackerMsg.innerHTML = '⏱️ 已達追蹤等待上限。虛擬機仍在開機初始化或客體作業系統載入中，請稍候於 vCenter 檢視即時 IP。';
+                    }
+                    return;
+                }
+
+                try {
+                    const r = await fetch(`/api/vm-guest-ip?vmName=${encodeURIComponent(vmName)}`);
+                    const d = await r.json();
+                    if (d.success && d.hasIp && d.primaryIp) {
+                        clearInterval(vmToolsPollTimer);
+                        const tracker = document.getElementById('vmLiveTracker');
+                        if (tracker) {
+                            const isWin = (osType === 'Windows');
+                            const connCmd = isWin ? `mstsc /v:${d.primaryIp}` : `ssh root@${d.primaryIp}`;
+                            const copyBtnLabel = isWin ? '📋 複製 RDP 指令' : '📋 複製 SSH 指令';
+
+                            tracker.style.border = '1px solid rgba(34, 197, 94, 0.5)';
+                            tracker.style.background = 'rgba(34, 197, 94, 0.12)';
+                            tracker.innerHTML = `
+                                <div style="font-weight: bold; color: #4ade80; font-size: 0.98rem; display: flex; align-items: center; gap: 6px;">
+                                    <span>🟢 虛擬機已成功啟動並取得 IP！</span>
+                                </div>
+                                <div style="margin-top: 8px; font-size: 0.9rem; color: #e2e8f0;">
+                                    <strong>即時實體 IP：</strong> <code style="background: #0f172a; padding: 2px 8px; border-radius: 4px; color: #38bdf8; font-size: 1.05rem; font-weight: bold;">${d.primaryIp}</code>
+                                    ${d.ipAddresses.length > 1 ? `<span style="font-size:0.8rem; color:#94a3b8;"> (所有偵測 IP: ${d.ipAddresses.join(', ')})</span>` : ''}
+                                </div>
+                                <div style="margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                    <span style="font-size: 0.85rem; color: #94a3b8;">快速連線：</span>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('${connCmd}'); alert('已複製連線指令：${connCmd}');">${copyBtnLabel}</button>
+                                    <span style="font-size: 0.82rem; color: #94a3b8;">(指令: <code>${connCmd}</code>)</span>
+                                </div>
+                            `;
+                        }
+                    } else if (trackerMsg) {
+                        trackerMsg.innerHTML = `正在向 VMware Tools 查詢連線狀態... (${attempts}/${maxAttempts}) ${d.powerState ? `[電源狀態: ${d.powerState}]` : ''}`;
+                    }
+                } catch (e) {
+                    // Silently ignore transient fetch errors
+                }
+            }, 3500);
+        }
 
         // 分頁 3 提交：克隆並套用 OS 自訂規格
         document.getElementById('provisionForm').addEventListener('submit', async function(e) {
@@ -1821,6 +2049,19 @@
                 if (data.success) {
                     document.getElementById('provResTitle').textContent = '🎉 虛擬機開通成功！';
                     document.getElementById('provResTitle').style.color = 'var(--success)';
+
+                    const trackerHtml = autoPowerOn ? `
+                        <div id="vmLiveTracker" style="margin-top: 14px; padding: 14px; background: rgba(30, 41, 59, 0.7); border-radius: 8px; border: 1px dashed #3b82f6;">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span class="spinner" style="width: 14px; height: 14px; border-width: 2px; display: inline-block;"></span>
+                                <strong style="color: #60a5fa;">📡 虛擬機即時狀態監控中... (正在等待開機與 VMware Tools 回報 IP)</strong>
+                            </div>
+                            <div id="vmLiveTrackerMsg" style="margin-top: 6px; font-size: 0.85rem; color: #94a3b8;">
+                                正在向 vCenter / VMware Tools 查詢即時連線狀態 (約需 20~60 秒)...
+                            </div>
+                        </div>
+                    ` : '';
+
                     document.getElementById('provResMsg').innerHTML = `
                         <strong>虛擬機名稱：</strong> ${data.vmName}<br>
                         <strong>電腦名稱 (Hostname)：</strong> ${data.hostName}<br>
@@ -1828,10 +2069,15 @@
                         <strong>所屬 VLAN (PortGroup)：</strong> ${data.portGroup}<br>
                         <strong>開機狀態：</strong> ${data.powerOn ? '已自動開機 (正在執行 OS 自訂規格設定)' : '未開機'}<br>
                         <p style="margin-top: 8px; color: #94a3b8;">
-                            💡 作業系統自訂引擎 (Sysprep / cloud-init) 在初次開機後會自動完成主機名稱、網路卡綁定與 SID 重設，約 1~2 分鐘後即可使用連線。
+                            💡 作業系統自訂引擎 (Sysprep / cloud-init) 在初次開機後會自動完成主機名稱、網路卡綁定與 SID 重設。
                         </p>
+                        ${trackerHtml}
                     `;
                     resBox.scrollIntoView({ behavior: 'smooth' });
+
+                    if (autoPowerOn) {
+                        startVmToolsPolling(data.vmName, osType);
+                    }
                 } else {
                     document.getElementById('provResTitle').textContent = '❌ 克隆部署失敗';
                     document.getElementById('provResTitle').style.color = 'var(--danger)';
