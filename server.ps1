@@ -46,6 +46,7 @@ Start-Process $Prefix
 
 $global:ActiveVIServer = $null
 $global:CachedCred = $null
+$global:LastDeployResult = $null
 
 function Send-JsonResponse($response, $data, [int]$statusCode = 200) {
     $json = $data | ConvertTo-Json -Depth 6 -Compress
@@ -75,8 +76,13 @@ while ($listener.IsListening) {
     $request = $context.Request
     $response = $context.Response
 
-    # Allow CORS
-    $response.AddHeader("Access-Control-Allow-Origin", "*")
+    # Restrict CORS to localhost only for security
+    $origin = $request.Headers["Origin"]
+    if ($origin -and ($origin -like "http://localhost:*" -or $origin -like "http://127.0.0.1:*")) {
+        $response.AddHeader("Access-Control-Allow-Origin", $origin)
+    } else {
+        $response.AddHeader("Access-Control-Allow-Origin", "http://localhost:$Port")
+    }
     $response.AddHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
     $response.AddHeader("Access-Control-Allow-Headers", "Content-Type")
 
@@ -113,21 +119,22 @@ while ($listener.IsListening) {
             }
 
             $targetServer = $body.server.Trim() -replace '^https?://', '' -replace '/.*$', ''
+            $targetUser   = ("" + $body.username).Trim()
 
             if ($global:ActiveVIServer) {
                 Disconnect-VIServer -Server $global:ActiveVIServer -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
             }
 
-            Write-Host "Connecting to target host [$targetServer]..." -ForegroundColor Cyan
+            Write-Host "Connecting to target host [$targetServer] with user [$targetUser]..." -ForegroundColor Cyan
             $secPass = ConvertTo-SecureString $body.password -AsPlainText -Force
-            $cred = New-Object System.Management.Automation.PSCredential($body.username, $secPass)
+            $cred = New-Object System.Management.Automation.PSCredential($targetUser, $secPass)
 
             $conn = Connect-VIServer -Server $targetServer -Credential $cred -ErrorAction Stop
 
             $global:ActiveVIServer = $conn
             $global:CachedCred = @{
                 Server   = $targetServer
-                Username = $body.username
+                Username = $targetUser
                 Password = $body.password
             }
 
@@ -162,6 +169,111 @@ while ($listener.IsListening) {
             Send-JsonResponse $response @{
                 success = $false
                 message = $_.Exception.Message
+            }
+        }
+        continue
+    }
+
+    # 2.2 API: Disconnect from server
+    if ($rawUrl -eq "/api/disconnect" -and $request.HttpMethod -eq "POST") {
+        try {
+            if ($global:ActiveVIServer) {
+                Write-Host "Disconnecting active session..." -ForegroundColor Cyan
+                Disconnect-VIServer -Server $global:ActiveVIServer -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+            }
+            $global:ActiveVIServer = $null
+            $global:CachedCred = $null
+            Send-JsonResponse $response @{
+                success = $true
+                message = "Disconnected successfully."
+            }
+            Write-Host "Session disconnected." -ForegroundColor Green
+        } catch {
+            Send-JsonResponse $response @{
+                success = $false
+                message = $_.Exception.Message
+            }
+        }
+        continue
+    }
+
+    # 2.3 API: Query host existing network state (for live diff comparison)
+    if ($rawUrl.StartsWith("/api/host-network-state") -and ($request.HttpMethod -eq "GET" -or $request.HttpMethod -eq "POST")) {
+        if (-not $global:ActiveVIServer) {
+            Send-JsonResponse $response @{
+                success = $false
+                message = "Not connected to any vCenter/ESXi yet. Please connect first."
+            }
+            continue
+        }
+
+        try {
+            $targetHostName = ""
+            if ($request.HttpMethod -eq "POST") {
+                $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
+                $body = $reader.ReadToEnd() | ConvertFrom-Json
+                $targetHostName = ("" + $body.host).Trim()
+            } else {
+                if ($request.Url.Query) {
+                    $queryString = $request.Url.Query.TrimStart('?')
+                    foreach ($pair in $queryString.Split('&')) {
+                        $kv = $pair.Split('=', 2)
+                        if ($kv[0] -eq "host" -and $kv.Count -gt 1) {
+                            $targetHostName = [System.Uri]::UnescapeDataString($kv[1])
+                        }
+                    }
+                }
+            }
+
+            $hostsToQuery = @()
+            if (-not $targetHostName -or $targetHostName -eq "_ALL_") {
+                $hostsToQuery = Get-VMHost -ErrorAction SilentlyContinue
+            } else {
+                $hostsToQuery = Get-VMHost -Name $targetHostName -ErrorAction SilentlyContinue
+            }
+
+            $portGroupList = @()
+            foreach ($h in $hostsToQuery) {
+                $pgs = Get-VirtualPortGroup -VMHost $h -ErrorAction SilentlyContinue
+                foreach ($pg in $pgs) {
+                    $vswName = if ($pg.VirtualSwitchName) { $pg.VirtualSwitchName } elseif ($pg.VirtualSwitch) { $pg.VirtualSwitch.Name } else { "" }
+                    if ($vswName) {
+                        $portGroupList += [PSCustomObject]@{
+                            host    = $h.Name
+                            vswitch = $vswName
+                            name    = $pg.Name
+                            vlanId  = [int]$pg.VLanId
+                        }
+                    }
+                }
+            }
+
+            Send-JsonResponse $response @{
+                success    = $true
+                host       = $targetHostName
+                portGroups = $portGroupList
+            }
+        } catch {
+            Send-JsonResponse $response @{
+                success = $false
+                message = $_.Exception.Message
+            }
+        }
+        continue
+    }
+
+    # 2.4 API: Get last deploy result
+    if ($rawUrl -eq "/api/last-deploy" -and $request.HttpMethod -eq "GET") {
+        if ($global:LastDeployResult) {
+            Send-JsonResponse $response @{
+                success = $true
+                hasData = $true
+                data    = $global:LastDeployResult
+            }
+        } else {
+            Send-JsonResponse $response @{
+                success = $true
+                hasData = $false
             }
         }
         continue
@@ -278,6 +390,19 @@ while ($listener.IsListening) {
                         continue
                     }
 
+                    # Validate 802.1Q VLAN range (0 to 4095; 4095 is Trunk/VGT)
+                    if ($vlanId -lt 0 -or $vlanId -gt 4095) {
+                        $results += [PSCustomObject]@{
+                            host    = $h.Name
+                            vswitch = $vswName
+                            name    = $pgName
+                            vlanId  = $vlanId
+                            status  = "error"
+                            message = "VLAN ID $vlanId 超出有效範圍 (合法為 0 ~ 4095)"
+                        }
+                        continue
+                    }
+
                     try {
                         # 1. Check or auto-create vSwitch
                         $vsw = Get-VirtualSwitch -VMHost $h -Name $vswName -ErrorAction SilentlyContinue
@@ -299,17 +424,18 @@ while ($listener.IsListening) {
                                 name    = $pgName
                                 vlanId  = $vlanId
                                 status  = "skipped"
-                                message = "Already exists (Skipped)"
+                                message = "已存在主機 (自動略過)"
                             }
                         } else {
                             New-VirtualPortGroup -VirtualSwitch $vsw -Name $pgName -VLanId $vlanId -ErrorAction Stop | Out-Null
+                            $msg = if ($vswCreated) { "建立成功 (⚠️ 自動新建交換器 $vswName，尚未綁定實體 Uplink 網卡)" } else { "建立成功" }
                             $results += [PSCustomObject]@{
                                 host    = $h.Name
                                 vswitch = $vswName
                                 name    = $pgName
                                 vlanId  = $vlanId
                                 status  = "created"
-                                message = if ($vswCreated) { "Created (and auto-created $vswName)" } else { "Created" }
+                                message = $msg
                             }
                         }
                     } catch {
@@ -331,15 +457,25 @@ while ($listener.IsListening) {
 
             Write-Host "Batch deploy finished: Created=$createdCount, Skipped=$skippedCount, Error=$errorCount" -ForegroundColor Green
 
+            $summaryData = @{
+                total   = $results.Count
+                created = $createdCount
+                skipped = $skippedCount
+                error   = $errorCount
+            }
+
+            # Cache last deploy result for resume/audit
+            $global:LastDeployResult = @{
+                timestamp  = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+                targetHost = $body.targetHost
+                summary    = $summaryData
+                results    = $results
+            }
+
             Send-JsonResponse $response @{
                 success = $true
                 results = $results
-                summary = @{
-                    total   = $results.Count
-                    created = $createdCount
-                    skipped = $skippedCount
-                    error   = $errorCount
-                }
+                summary = $summaryData
             }
         } catch {
             Write-Host "Batch deploy exception: $($_.Exception.Message)" -ForegroundColor Red
@@ -364,7 +500,10 @@ while ($listener.IsListening) {
             continue
         }
 
-        Write-Host "Switching request: VM [$($body.vmName)] -> Switch [$($body.vswitch)] -> PortGroup [$($body.portGroup)]" -ForegroundColor Yellow
+        $proto = if ($body.protocol) { $body.protocol } else { "icmp" }
+        $testPort = if ($body.port) { [int]$body.port } else { 0 }
+
+        Write-Host "Switching request: VM [$($body.vmName)] -> Switch [$($body.vswitch)] -> PortGroup [$($body.portGroup)] (Protocol: $proto, Port: $testPort)" -ForegroundColor Yellow
 
         try {
             $global:KeepVIServerSession = $true
@@ -374,6 +513,8 @@ while ($listener.IsListening) {
                 -VSwitchName $body.vswitch `
                 -PortGroupName $body.portGroup `
                 -NicName $body.nicName `
+                -Protocol $proto `
+                -Port $testPort `
                 -Server $global:CachedCred.Server `
                 -Username $global:CachedCred.Username `
                 -Password $global:CachedCred.Password
