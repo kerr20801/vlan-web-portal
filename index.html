@@ -1,0 +1,2113 @@
+﻿﻿<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VMware VLAN 批次自動部署與切換控制台</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --success: #16a34a;
+            --danger: #dc2626;
+            --warning: #d97706;
+            --info: #0284c7;
+            --bg: #0f172a;
+            --card-bg: #1e293b;
+            --border: #334155;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --input-bg: #0f172a;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 24px 16px;
+        }
+
+        .header-bar {
+            width: 100%;
+            max-width: 960px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .title-area h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .title-area p {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .status-pill:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .status-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background-color: var(--danger);
+        }
+
+        .status-dot.online {
+            background-color: var(--success);
+            box-shadow: 0 0 8px var(--success);
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .github-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 6px 14px;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .github-badge:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: #64748b;
+            color: #ffffff;
+        }
+
+        .btn-disconnect {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            background: rgba(220, 38, 38, 0.15);
+            border: 1px solid #dc2626;
+            color: #fca5a5;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-disconnect:hover {
+            background: rgba(220, 38, 38, 0.35);
+            color: #ffffff;
+        }
+
+        .app-footer {
+            width: 100%;
+            max-width: 960px;
+            margin-top: 36px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .app-footer a {
+            color: #60a5fa;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .app-footer a:hover {
+            color: #93c5fd;
+            text-decoration: underline;
+        }
+
+        .btn-clone {
+            background: #2563eb !important;
+            color: #ffffff !important;
+            border-color: #3b82f6 !important;
+        }
+
+        .btn-clone:hover {
+            background: #1d4ed8 !important;
+        }
+
+        .tabs {
+            width: 100%;
+            max-width: 960px;
+            display: flex;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .tab-btn {
+            background: #1e293b;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.95rem;
+            transition: all 0.2s;
+        }
+
+        .tab-btn.active {
+            background: var(--primary);
+            color: #ffffff;
+            border-color: var(--primary);
+        }
+
+        .container {
+            width: 100%;
+            max-width: 960px;
+            display: grid;
+            gap: 20px;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+
+        .card-header {
+            margin-bottom: 20px;
+        }
+
+        .card-header h2 {
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .card-header p {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-group.full-width {
+            grid-column: span 2;
+        }
+
+        label {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #cbd5e1;
+        }
+
+        label span.required {
+            color: #f87171;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 10px 14px;
+            background-color: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-main);
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        textarea {
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 0.875rem;
+            line-height: 1.4;
+            resize: vertical;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+        }
+
+        .hint {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 8px;
+            margin-top: 6px;
+        }
+
+        .btn {
+            display: inline-flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: #ffffff;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background-color: var(--primary-hover);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background-color: #334155;
+            border-color: #475569;
+            color: #ffffff;
+        }
+
+        .btn-secondary:hover {
+            background-color: #475569;
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 0.8rem;
+        }
+
+        /* 預覽表格 */
+        .preview-box {
+            margin-top: 16px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            background: #0f172a;
+        }
+
+        .preview-header {
+            padding: 10px 14px;
+            background: #1e293b;
+            font-size: 0.85rem;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .table-scroll {
+            max-height: 280px;
+            overflow-y: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            text-align: left;
+        }
+
+        th, td {
+            padding: 8px 14px;
+            border-bottom: 1px solid #1e293b;
+        }
+
+        th {
+            background: #111827;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        /* 統計卡片 */
+        .summary-bar {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .summary-item {
+            flex: 1;
+            padding: 12px;
+            border-radius: 8px;
+            background: #0f172a;
+            border: 1px solid var(--border);
+            text-align: center;
+        }
+
+        .summary-num {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-top: 4px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+
+        .badge-success { background: rgba(22, 163, 74, 0.2); color: #4ade80; }
+        .badge-warning { background: rgba(217, 119, 6, 0.2); color: #fbbf24; }
+        .badge-danger  { background: rgba(220, 38, 38, 0.2); color: #f87171; }
+        .badge-info    { background: rgba(37, 99, 235, 0.2); color: #60a5fa; }
+
+        /* Modal 彈窗樣式 */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.75);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            backdrop-filter: blur(4px);
+        }
+
+        .modal {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            width: 100%;
+            max-width: 480px;
+            padding: 24px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 18px;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header-bar">
+        <div class="title-area">
+            <h1>🌐 VMware VLAN 批次自動部署工具</h1>
+            <p>免手動新增 60 次 • 一鍵部署 20~40+ 個 VLAN • 支援主機現況比對與斷線續接</p>
+        </div>
+        <div class="header-actions">
+            <a href="https://github.com/kerr20801/vlan-web-portal" target="_blank" rel="noopener" class="github-badge" title="檢視 GitHub 原始碼與作者資訊 (Kerr)">
+                <svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+                </svg>
+                <span>GitHub</span>
+            </a>
+            <div class="status-pill" id="btnOpenConfig" title="點擊設定連線">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">尚未連線 (點此設定)</span>
+                <span>⚙️</span>
+            </div>
+            <button type="button" class="btn-disconnect" id="btnDisconnect" style="display: none;" title="中斷與 vCenter/ESXi 的連線">
+                <span>🔌 斷開連線</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- 功能切換分頁 -->
+    <div class="tabs">
+        <button class="tab-btn active" id="tabBtnDeploy" onclick="switchTab('deploy')">🚀 批量部署 / 新增 VLAN (新主機專用)</button>
+        <button class="tab-btn" id="tabBtnAssign" onclick="switchTab('assign')">🔌 VM 網卡切換 (既有 VM 專用)</button>
+        <button class="tab-btn" id="tabBtnProvision" onclick="switchTab('provision')">👥 虛擬機克隆與配網 (Lab Provisioner)</button>
+    </div>
+
+    <div class="container">
+        <!-- 分頁 1：批量部署 VLAN -->
+        <div class="card" id="viewDeploy">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px;">
+                <div>
+                    <h2>步驟一：設定目標主機與 VLAN 清單</h2>
+                    <p>新增 ESXi 伺服器時，無需逐一手動建立。支援 Excel 貼上、自動草稿保存、主機現況比對與斷線續接！</p>
+                </div>
+                <div id="lastDeployNotice" style="display: none;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="btnViewLastResult">📋 查看上次執行結果</button>
+                </div>
+            </div>
+
+            <form id="batchDeployForm">
+                <div class="form-grid">
+                    <!-- 目標 ESXi 主機 -->
+                    <div class="form-group full-width">
+                        <label for="targetHostSelect">目標 ESXi 主機 (Target Host) <span class="required">*</span></label>
+                        <select id="targetHostSelect" required>
+                            <option value="">-- 請先於右上角連線以載入主機清單 --</option>
+                        </select>
+                        <span class="hint">若為 vCenter 可選擇特定 ESXi 或「部署至全部主機」；選定主機後系統將自動讀取該主機現況進行即時比對。</span>
+                    </div>
+
+                    <!-- 批次清單輸入框 -->
+                    <div class="form-group full-width">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                            <label for="vlanInputList">VLAN 部署清單 (每行一筆) <span class="required">*</span></label>
+                            <div class="btn-group" style="flex-wrap: wrap;">
+                                <button type="button" class="btn btn-secondary btn-sm btn-clone" id="btnCloneFromHost">🔄 從既有主機複製 (Clone)</button>
+                                <button type="button" class="btn btn-secondary btn-sm" id="btnLoadExample">📋 載入 60 筆範例資料</button>
+                                <button type="button" class="btn btn-secondary btn-sm" id="btnExportInputCsv">📥 匯出清單 CSV</button>
+                                <button type="button" class="btn btn-secondary btn-sm" id="btnClearList">🗑️ 清空</button>
+                            </div>
+                        </div>
+                        <textarea id="vlanInputList" rows="10" placeholder="格式範例（支援逗號、Tab 或空格）：&#10;vSwitch0, VLAN10-Mgmt, 10&#10;vSwitch0, VLAN20-Dev, 20&#10;vSwitch1, VLAN100-DMZ, 100&#10;vSwitch1, VLAN200-DB, 200"></textarea>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                            <span class="hint">格式：<code>vSwitch名稱, PortGroup名稱, VLAN_ID</code>（合法 VLAN 範圍為 0 ~ 4095；若該 vSwitch 不存在系統將自動建立）。</span>
+                            <span id="draftSaveHint" style="font-size: 0.75rem; color: #60a5fa; display: none;">💾 已自動暫存至本機草稿</span>
+                        </div>
+                    </div>
+
+                    <!-- 即時解析預覽與主機比對 -->
+                    <div class="form-group full-width">
+                        <div class="preview-box">
+                            <div class="preview-header">
+                                <span id="previewStats">📊 待部署項目解析：0 筆</span>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span id="diffStats" style="font-size: 0.8rem; color: #94a3b8;"></span>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="btnTriggerDiff" style="display: none; padding: 3px 8px; font-size: 0.75rem;">🔄 重新比對現況</button>
+                                </div>
+                            </div>
+                            <div class="table-scroll">
+                                <table id="previewTable">
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>所屬 vSwitch</th>
+                                            <th>Port Group (VLAN 名稱)</th>
+                                            <th>VLAN ID</th>
+                                            <th>主機現況比對 (Live Diff)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="previewTableBody">
+                                        <tr><td colspan="5" style="text-align: center; color: #64748b;">尚未輸入任何項目</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 部署按鈕 -->
+                    <div class="form-group full-width" style="margin-top: 10px; display: flex; gap: 12px; flex-wrap: wrap;">
+                        <button type="submit" class="btn btn-primary" id="btnStartDeploy" style="flex: 2; min-width: 240px;">
+                            <span id="deployBtnIcon">⚡</span>
+                            <span id="deployBtnLabel">立即執行批次部署 (全部項目)</span>
+                        </button>
+                        <button type="button" class="btn btn-secondary" id="btnDeployUnfinishedOnly" style="flex: 1; min-width: 200px; display: none; background: #1e3a8a; border-color: #3b82f6; color: #fff;">
+                            <span>🎯 僅部署未完成項目 (<span id="unfinishedCount">0</span> 筆)</span>
+                        </button>
+                    </div>
+                </div>
+            </form>
+
+            <!-- 部署結果回報區 -->
+            <div id="deployResultArea" style="display: none; margin-top: 24px;">
+                <div class="card-header" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <h3>🎉 批次部署執行結果</h3>
+                    <div class="btn-group">
+                        <button type="button" class="btn btn-secondary btn-sm" id="btnExportResultCsv">📥 匯出部署結果報表 (.csv)</button>
+                    </div>
+                </div>
+
+                <div class="summary-bar">
+                    <div class="summary-item">
+                        <div style="font-size: 0.8rem; color: var(--text-muted);">總計項目</div>
+                        <div class="summary-num" id="sumTotal">0</div>
+                    </div>
+                    <div class="summary-item" style="border-left: 4px solid var(--success);">
+                        <div style="font-size: 0.8rem; color: #4ade80;">成功建立</div>
+                        <div class="summary-num" style="color: #4ade80;" id="sumCreated">0</div>
+                    </div>
+                    <div class="summary-item" style="border-left: 4px solid var(--warning);">
+                        <div style="font-size: 0.8rem; color: #fbbf24;">已存在略過</div>
+                        <div class="summary-num" style="color: #fbbf24;" id="sumSkipped">0</div>
+                    </div>
+                    <div class="summary-item" style="border-left: 4px solid var(--danger);">
+                        <div style="font-size: 0.8rem; color: #f87171;">失敗錯誤</div>
+                        <div class="summary-num" style="color: #f87171;" id="sumError">0</div>
+                    </div>
+                </div>
+
+                <div class="preview-box" style="margin-top: 16px;">
+                    <div class="preview-header">
+                        <span>執行明細清單</span>
+                        <span id="deployReportTime" style="font-size: 0.75rem; color: var(--text-muted);"></span>
+                    </div>
+                    <div class="table-scroll" style="max-height: 300px;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>主機</th>
+                                    <th>vSwitch</th>
+                                    <th>Port Group</th>
+                                    <th>VLAN ID</th>
+                                    <th>狀態</th>
+                                    <th>訊息</th>
+                                </tr>
+                            </thead>
+                            <tbody id="deployDetailBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 分頁 2：既有 VM 網卡切換 -->
+        <div class="card" id="viewAssign" style="display: none;">
+            <div class="card-header">
+                <h2>VM 網卡 VLAN 切換與多協定連通性測試</h2>
+                <p>將指定虛擬機的網路卡切換至目標 VLAN，並自動執行連通性驗證（支援 Ping、RDP、SSH 與自訂 Port）。</p>
+            </div>
+
+            <form id="vlanForm">
+                <div class="form-grid">
+                    <div class="form-group full-width">
+                        <label for="vmSelect">目標虛擬機 (VM Name) <span class="required">*</span></label>
+                        <input list="vmDataList" id="vmSelect" placeholder="例如：app-server-01" required>
+                        <datalist id="vmDataList"></datalist>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="vswitchSelect">1. 目標 vSwitch <span class="required">*</span></label>
+                        <select id="vswitchSelect" required>
+                            <option value="">-- 請先連線 --</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="portGroupSelect">2. 目標 VLAN (Port Group) <span class="required">*</span></label>
+                        <select id="portGroupSelect" required disabled>
+                            <option value="">-- 請先選擇 vSwitch --</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="targetIp">連通性測試目標 IP <span class="required">*</span></label>
+                        <input type="text" id="targetIp" placeholder="例如：192.168.10.50" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="assignProtocol">檢測通訊協定</label>
+                        <select id="assignProtocol">
+                            <option value="icmp">Ping (ICMP) [全平台推薦]</option>
+                            <option value="rdp">RDP (Port 3389) [Windows 推薦]</option>
+                            <option value="ssh">SSH (Port 22) [Linux 推薦]</option>
+                            <option value="custom">自訂 TCP Port</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" id="customPortGroup" style="display: none;">
+                        <label for="assignCustomPort">自訂 TCP Port 號</label>
+                        <input type="number" id="assignCustomPort" placeholder="例如：8080" min="1" max="65535">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="nicName">操作網卡名稱 (選填)</label>
+                        <input type="text" id="nicName" placeholder="預設第一張">
+                    </div>
+
+                    <div class="form-group full-width" style="margin-top: 10px;">
+                        <button type="submit" class="btn btn-primary" id="btnSubmitAssign">
+                            <span id="assignSpinner" style="display:none;" class="spinner"></span>
+                            <span id="assignBtnLabel">⚡ 立即執行切換與連通性測試</span>
+                        </button>
+                    </div>
+                </div>
+            </form>
+
+            <div id="resultBoxAssign" style="display:none; margin-top:20px; padding:18px; border-radius:8px; background:#0f172a; border:1px solid var(--border);">
+                <div style="font-weight: bold; margin-bottom: 6px;" id="assignResTitle"></div>
+                <div id="assignResMsg" style="font-size: 0.9rem; color: #cbd5e1; line-height: 1.5;"></div>
+            </div>
+        </div>
+
+        <!-- 分頁 3：新人環境/虛擬機克隆與配網 -->
+        <div class="card" id="viewProvision" style="display: none;">
+            <div class="card-header">
+                <h2>👥 虛擬機自動克隆與配網 (VM Lab Provisioner)</h2>
+                <p>選取既有 VM 範本，透過 vCenter 原生自訂規格 (OS Customization) 自動套用新主機名稱、全新 SID 與靜態 IP，避免手動教新人的重複繁瑣作業。</p>
+            </div>
+
+            <form id="provisionForm">
+                <div class="form-grid">
+                    <!-- 1. 來源範本 -->
+                    <div class="form-group">
+                        <label for="provSourceVmSelect">1. 來源範本虛擬機 (Source VM) <span class="required">*</span></label>
+                        <select id="provSourceVmSelect" required>
+                            <option value="">-- 請先連線以載入 VM --</option>
+                        </select>
+                        <span class="hint">選擇作為母體的 Windows Server / Win11 / Linux 範本</span>
+                    </div>
+
+                    <!-- 2. 作業系統類型 -->
+                    <div class="form-group">
+                        <label for="provOsType">2. 作業系統架構 (OS Type)</label>
+                        <select id="provOsType">
+                            <option value="auto">🤖 自動判斷 (Linux / Windows 智慧辨識)</option>
+                            <option value="Linux">🐧 Linux (Ubuntu / Debian / CentOS / RHEL / SUSE)</option>
+                            <option value="Windows">🪟 Windows (Server 2016-2025 / Win10/11 Sysprep)</option>
+                        </select>
+                        <span class="hint">系統將套用對應的 Linux Customization 或 Windows Sysprep 規格</span>
+                    </div>
+
+                    <!-- 3. 目標主機 -->
+                    <div class="form-group">
+                        <label for="provTargetHostSelect">3. 目標 ESXi 主機 (Target Host)</label>
+                        <select id="provTargetHostSelect">
+                            <option value="">(預設使用來源 VM 所在主機)</option>
+                        </select>
+                    </div>
+
+                    <!-- 4. 儲存 Datastore -->
+                    <div class="form-group">
+                        <label for="provDatastoreSelect">4. 目標儲存空間 (Datastore)</label>
+                        <select id="provDatastoreSelect">
+                            <option value="">(預設使用來源 VM 所在 Datastore)</option>
+                        </select>
+                    </div>
+
+                    <!-- 5. 新 VM 名稱 -->
+                    <div class="form-group">
+                        <label for="provNewVmName">5. 新虛擬機名稱 (VM Name) <span class="required">*</span></label>
+                        <input type="text" id="provNewVmName" placeholder="例如：David-DC01 或 Lab-Win11" required>
+                    </div>
+
+                    <!-- 6. 電腦名稱 Hostname -->
+                    <div class="form-group">
+                        <label for="provHostName">6. 電腦主機名稱 (Computer Name) <span class="required">*</span></label>
+                        <input type="text" id="provHostName" placeholder="例如：david-dc01 (自動轉換 RFC 1123 規範)" required>
+                        <span class="hint">RFC 1123 規範：僅能包含英數字與連字號 (-)，不可含底線 (_) 或空格</span>
+                    </div>
+
+                    <!-- 7. 網路指派 vSwitch -->
+                    <div class="form-group">
+                        <label for="provVswitchSelect">7. 指派 vSwitch</label>
+                        <select id="provVswitchSelect">
+                            <option value="">-- 請先選擇 vSwitch --</option>
+                        </select>
+                    </div>
+
+                    <!-- 8. 網路指派 PortGroup -->
+                    <div class="form-group">
+                        <label for="provPortGroupSelect">8. 指派 VLAN (Port Group) <span class="required">*</span></label>
+                        <select id="provPortGroupSelect" required disabled>
+                            <option value="">-- 請先選擇 vSwitch --</option>
+                        </select>
+                    </div>
+
+                    <!-- 9. IP 配發模式 (Static IP / DHCP) -->
+                    <div class="form-group full-width">
+                        <label for="provIpMode">9. IP 配發模式 (IP Mode) <span class="required">*</span></label>
+                        <select id="provIpMode">
+                            <option value="static" selected>📌 指定固定靜態 IP (Static IPv4) - 推薦 (直接配發，確保開機必定有 IP 可連線)</option>
+                            <option value="dhcp">🌐 自動取得 IP (DHCP) - 僅適用目標 VLAN 具備 DHCP 伺服器環境</option>
+                        </select>
+                        <span class="hint" id="provIpModeHint">💡 推薦固定 IP：企業與實驗室 VLAN 通常無 DHCP 伺服器，直接指定靜態 IP 可確保克隆後必定能連線。</span>
+                    </div>
+
+                    <!-- 靜態 IP 細部欄位容器 (預設展開) -->
+                    <div id="provStaticIpContainer" style="display: grid; grid-column: span 2;" class="form-grid">
+                        <div class="form-group full-width">
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                                <label for="provIp" style="margin-bottom: 0;">靜態 IPv4 位址 <span class="required">*</span></label>
+                                <div style="display: flex; gap: 8px;">
+                                    <button type="button" class="btn btn-secondary btn-sm" id="btnScanFreeIp" title="自動掃描網段尋找未使用的空閒 IP">
+                                        ⚡ 自動尋找空閒 IP
+                                    </button>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="btnCheckIpConflict" title="Ping 測試該 IP 是否已被其他設備佔用">
+                                        🔍 檢查 IP 衝突
+                                    </button>
+                                </div>
+                            </div>
+                            <input type="text" id="provIp" placeholder="例如：192.168.10.150" required>
+                            <div id="ipCheckBadge" style="display: none; margin-top: 6px; padding: 6px 12px; border-radius: 6px; font-size: 0.85rem;"></div>
+                            <span class="hint">輸入 IP 後將自動推算預設閘道 (例如 .1) 與遮罩；亦可點擊上方按鈕自動探測可用 IP。</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="provSubnet">子網路遮罩 (Subnet Mask)</label>
+                            <input type="text" id="provSubnet" value="255.255.255.0">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="provGateway">預設閘道 (Default Gateway)</label>
+                            <input type="text" id="provGateway" placeholder="例如：192.168.10.1">
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label for="provDns">DNS 伺服器 (以逗號分隔)</label>
+                            <input type="text" id="provDns" value="8.8.8.8, 1.1.1.1" placeholder="例如：192.168.10.1, 8.8.8.8">
+                        </div>
+                    </div>
+
+                    <!-- 10. 開機與進階選項 -->
+                    <div class="form-group full-width">
+                        <label>10. 開機與進階選項 (Options)</label>
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9rem; cursor: pointer; color: #f8fafc; margin-top: 4px;">
+                            <input type="checkbox" id="provAutoPowerOn" checked>
+                            <span>⚡ 克隆完成後自動開機（自動觸發作業系統自訂規格、設定 IP 與主機名稱）</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group full-width" style="margin-top: 10px;">
+                        <button type="submit" class="btn btn-primary" id="btnSubmitProvision">
+                            <span id="provSpinner" style="display:none;" class="spinner"></span>
+                            <span id="provBtnLabel">🚀 立即執行克隆與自動配網</span>
+                        </button>
+                    </div>
+                </div>
+            </form>
+
+            <div id="resultBoxProvision" style="display:none; margin-top:20px; padding:18px; border-radius:8px; background:#0f172a; border:1px solid var(--border);">
+                <div style="font-weight: bold; margin-bottom: 8px; font-size: 1.05rem;" id="provResTitle"></div>
+                <div id="provResMsg" style="font-size: 0.9rem; color: #cbd5e1; line-height: 1.6;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 頁尾作者與開源資訊 -->
+    <footer class="app-footer">
+        <p>
+            <strong>VMware VLAN Auto Portal</strong> • Created by 
+            <a href="https://github.com/kerr20801" target="_blank" rel="noopener">Kerr (@kerr20801)</a> • 
+            <a href="https://github.com/kerr20801/vlan-web-portal" target="_blank" rel="noopener">GitHub 原始碼</a> • 
+            MIT License
+        </p>
+    </footer>
+
+    <!-- 連線設定 Modal -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>⚙️ VMware 連線設定</h3>
+                <button type="button" id="btnCloseModal" style="background:none; border:none; color:#94a3b8; font-size:1.4rem; cursor:pointer;">&times;</button>
+            </div>
+            
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
+                支援 vCenter 或 獨立單機 ESXi。帳密只保留在背景記憶體，不寫入硬碟。
+            </p>
+
+            <form id="connectForm">
+                <div class="form-group" style="margin-bottom: 12px;">
+                    <label for="cfgServer">主機 IP / FQDN <span class="required">*</span></label>
+                    <input type="text" id="cfgServer" placeholder="例如：vc.domain.com 或 192.168.1.100" required>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 12px;">
+                    <label for="cfgUser">登入帳號 <span class="required">*</span></label>
+                    <input type="text" id="cfgUser" placeholder="例如：root 或 administrator@vsphere.local" required>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <label for="cfgPass">登入密碼 <span class="required">*</span></label>
+                        <button type="button" id="btnTogglePass" style="background: none; border: none; color: #60a5fa; font-size: 0.8rem; cursor: pointer; padding: 0;">👁️ 顯示密碼</button>
+                    </div>
+                    <input type="password" id="cfgPass" placeholder="請輸入密碼" required>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="btnCancelModal">取消</button>
+                    <button type="submit" class="btn btn-primary" id="btnDoConnect">
+                        <span id="connSpinner" style="display:none;" class="spinner"></span>
+                        <span id="connBtnLabel">連線並載入設定</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 從既有主機複製網路設定 Modal -->
+    <div class="modal-overlay" id="cloneModalOverlay" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>🔄 從既有主機複製網路設定 (Clone)</h3>
+                <button type="button" id="btnCloseCloneModal" style="background:none; border:none; color:#94a3b8; font-size:1.4rem; cursor:pointer;">&times;</button>
+            </div>
+            
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
+                選取單一 ESXi 主機或「全部主機 / vCenter 全域」，自動深層提取所有 Standard Switch (VSS) 與 Distributed Switch (vDS) 上的 PortGroup (VLAN) 並匯入清單。
+            </p>
+
+            <form id="cloneHostForm">
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label for="cloneSourceHostSelect">來源主機 / 掃描範圍 (Source Scope) <span class="required">*</span></label>
+                    <select id="cloneSourceHostSelect" required>
+                        <option value="">-- 請先連線以載入主機 --</option>
+                    </select>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; cursor: pointer;">
+                        <input type="checkbox" id="chkSkipDefaultNetworks" checked>
+                        <span>略過預設的 "VM Network" 與 "Management Network"</span>
+                    </label>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 18px;">
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; cursor: pointer;">
+                        <input type="radio" name="cloneInsertMode" value="replace" checked>
+                        <span>覆蓋清單（取代目前輸入框內容）</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; cursor: pointer; margin-top: 6px;">
+                        <input type="radio" name="cloneInsertMode" value="append">
+                        <span>附加（保留既有內容，加入到清單末端）</span>
+                    </label>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="btnCancelCloneModal">取消</button>
+                    <button type="submit" class="btn btn-primary" id="btnDoClone">
+                        <span id="cloneSpinner" style="display:none;" class="spinner"></span>
+                        <span id="cloneBtnLabel">🚀 讀取並匯入清單</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let isConnected = false;
+        let parsedVlanItems = [];
+        let currentNetworkMap = {};
+        let cachedHosts = [];
+        let hostExistingPortGroups = {}; // key: "vswitch|pgname" -> vlanId
+        let lastDeployReport = null;
+
+        const modalOverlay = document.getElementById('modalOverlay');
+        const btnOpenConfig = document.getElementById('btnOpenConfig');
+        const btnCloseModal = document.getElementById('btnCloseModal');
+        const btnCancelModal = document.getElementById('btnCancelModal');
+        const connectForm = document.getElementById('connectForm');
+        const btnDisconnect = document.getElementById('btnDisconnect');
+
+        const cloneModalOverlay = document.getElementById('cloneModalOverlay');
+        const btnCloneFromHost = document.getElementById('btnCloneFromHost');
+        const btnCloseCloneModal = document.getElementById('btnCloseCloneModal');
+        const btnCancelCloneModal = document.getElementById('btnCancelCloneModal');
+        const cloneHostForm = document.getElementById('cloneHostForm');
+        const cloneSourceHostSelect = document.getElementById('cloneSourceHostSelect');
+
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const targetHostSelect = document.getElementById('targetHostSelect');
+        const vlanInputList = document.getElementById('vlanInputList');
+        const previewStats = document.getElementById('previewStats');
+        const diffStats = document.getElementById('diffStats');
+        const btnTriggerDiff = document.getElementById('btnTriggerDiff');
+        const previewTableBody = document.getElementById('previewTableBody');
+        const btnDeployUnfinishedOnly = document.getElementById('btnDeployUnfinishedOnly');
+        const unfinishedCount = document.getElementById('unfinishedCount');
+        const draftSaveHint = document.getElementById('draftSaveHint');
+
+        // Modal 操作
+        btnOpenConfig.onclick = () => modalOverlay.style.display = 'flex';
+        btnCloseModal.onclick = () => modalOverlay.style.display = 'none';
+        btnCancelModal.onclick = () => modalOverlay.style.display = 'none';
+
+        const btnTogglePass = document.getElementById('btnTogglePass');
+        const cfgPass = document.getElementById('cfgPass');
+        btnTogglePass.onclick = () => {
+            if (cfgPass.type === 'password') {
+                cfgPass.type = 'text';
+                btnTogglePass.textContent = '🙈 隱藏密碼';
+            } else {
+                cfgPass.type = 'password';
+                btnTogglePass.textContent = '👁️ 顯示密碼';
+            }
+        };
+
+        btnCloseCloneModal.onclick = () => cloneModalOverlay.style.display = 'none';
+        btnCancelCloneModal.onclick = () => cloneModalOverlay.style.display = 'none';
+
+        // 匯出 CSV 萬用函式 (含 UTF-8 BOM，Excel 不會亂碼)
+        function exportToCsv(filename, headers, rows) {
+            let csv = '\uFEFF';
+            csv += headers.map(h => `"${('' + h).replace(/"/g, '""')}"`).join(',') + '\r\n';
+            rows.forEach(r => {
+                csv += r.map(c => `"${('' + (c !== null && c !== undefined ? c : '')).replace(/"/g, '""')}"`).join(',') + '\r\n';
+            });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // 中斷連線 (登出)
+        btnDisconnect.onclick = async () => {
+            if (!confirm('確定要中斷與目前 vCenter / ESXi 的連線嗎？')) return;
+            try {
+                const res = await fetch('/api/disconnect', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    isConnected = false;
+                    statusDot.classList.remove('online');
+                    statusText.textContent = '尚未連線 (點此設定)';
+                    btnDisconnect.style.display = 'none';
+                    hostExistingPortGroups = {};
+                    cachedHosts = [];
+                    targetHostSelect.innerHTML = '<option value="">-- 請先於右上角連線以載入主機清單 --</option>';
+                    diffStats.textContent = '';
+                    btnTriggerDiff.style.display = 'none';
+                    btnDeployUnfinishedOnly.style.display = 'none';
+                    parseVlanList();
+                    alert('已安全中斷連線並釋放記憶體 Session。');
+                }
+            } catch (err) {
+                alert('中斷連線異常：' + err.message);
+            }
+        };
+
+        function updateCloneHostDropdown() {
+            cloneSourceHostSelect.innerHTML = '';
+            if (!cachedHosts || cachedHosts.length === 0) {
+                cloneSourceHostSelect.innerHTML = '<option value="">-- 無可用主機 (請先連線) --</option>';
+                return;
+            }
+            cloneSourceHostSelect.innerHTML = '<option value="">-- 請選擇來源主機或全域掃描 --</option>';
+            
+            // 全域掃描選項
+            const optAll = document.createElement('option');
+            optAll.value = '_ALL_';
+            optAll.textContent = '🌟 全部主機 / vCenter 全域 (完整掃描所有主機與分散式交換機 vDS)';
+            cloneSourceHostSelect.appendChild(optAll);
+
+            cachedHosts.forEach(h => {
+                const opt = document.createElement('option');
+                opt.value = h;
+                opt.textContent = `🖥️ ${h}`;
+                cloneSourceHostSelect.appendChild(opt);
+            });
+        }
+
+        btnCloneFromHost.onclick = () => {
+            if (!isConnected) {
+                alert('請先點擊右上角連線至 vCenter 或 ESXi 主機！');
+                modalOverlay.style.display = 'flex';
+                return;
+            }
+            updateCloneHostDropdown();
+            cloneModalOverlay.style.display = 'flex';
+        };
+
+        // 提交從主機複製表單
+        cloneHostForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const sourceHost = cloneSourceHostSelect.value;
+            if (!sourceHost) {
+                alert('請選擇來源主機或全域掃描！');
+                return;
+            }
+
+            const skipDefaultVmNetwork = document.getElementById('chkSkipDefaultNetworks').checked;
+            const mode = document.querySelector('input[name="cloneInsertMode"]:checked').value;
+
+            const spinner = document.getElementById('cloneSpinner');
+            const label = document.getElementById('cloneBtnLabel');
+            const btn = document.getElementById('btnDoClone');
+
+            spinner.style.display = 'inline-block';
+            label.textContent = '讀取主機網路中...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/clone-host-network', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sourceHost, skipDefaultVmNetwork })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    const hostLabel = sourceHost === '_ALL_' ? '全部主機 / vCenter 全域' : sourceHost;
+                    if (data.count === 0) {
+                        alert(`來源 [${hostLabel}] 未讀取到任何 Port Group / VLAN 設定。`);
+                    } else {
+                        const headerComment = `# --- 複製自來源: ${hostLabel} (${data.count} 筆) ---`;
+                        if (mode === 'replace') {
+                            vlanInputList.value = headerComment + '\n' + data.text;
+                        } else {
+                            const existing = vlanInputList.value.trim();
+                            vlanInputList.value = (existing ? existing + '\n\n' : '') + headerComment + '\n' + data.text;
+                        }
+                        parseVlanList();
+                        cloneModalOverlay.style.display = 'none';
+                        alert(`✅ 成功從 [${hostLabel}] 匯入 ${data.count} 筆完整 VLAN 設定！\n已自動更新即時預覽表格並儲存草稿。`);
+                    }
+                } else {
+                    alert('讀取失敗：' + data.message);
+                }
+            } catch (err) {
+                alert('呼叫 API 異常：' + err.message);
+            } finally {
+                spinner.style.display = 'none';
+                label.textContent = '🚀 讀取並匯入清單';
+                btn.disabled = false;
+            }
+        });
+
+        // 分頁切換
+        function switchTab(tab) {
+            document.getElementById('tabBtnDeploy').classList.toggle('active', tab === 'deploy');
+            document.getElementById('tabBtnAssign').classList.toggle('active', tab === 'assign');
+            document.getElementById('tabBtnProvision').classList.toggle('active', tab === 'provision');
+            document.getElementById('viewDeploy').style.display = tab === 'deploy' ? 'block' : 'none';
+            document.getElementById('viewAssign').style.display = tab === 'assign' ? 'block' : 'none';
+            document.getElementById('viewProvision').style.display = tab === 'provision' ? 'block' : 'none';
+        }
+
+        // 讀取主機現有網路以進行 Diff 比對
+        async function fetchHostNetworkState() {
+            const host = targetHostSelect.value;
+            if (!isConnected || !host) {
+                hostExistingPortGroups = {};
+                btnTriggerDiff.style.display = 'none';
+                btnDeployUnfinishedOnly.style.display = 'none';
+                diffStats.textContent = '';
+                parseVlanList();
+                return;
+            }
+
+            diffStats.textContent = '⏳ 正在讀取主機現況進行比對...';
+            btnTriggerDiff.style.display = 'inline-block';
+
+            try {
+                const res = await fetch(`/api/host-network-state?host=${encodeURIComponent(host)}`);
+                const data = await res.json();
+                if (data.success) {
+                    hostExistingPortGroups = {};
+                    (data.portGroups || []).forEach(pg => {
+                        const key = `${pg.vswitch.toLowerCase().trim()}|${pg.name.toLowerCase().trim()}`;
+                        hostExistingPortGroups[key] = pg.vlanId;
+                    });
+                    diffStats.textContent = `✅ 主機已載入 ${data.portGroups ? data.portGroups.length : 0} 個既有 PortGroup`;
+                } else {
+                    diffStats.textContent = '⚠️ 比對無法載入：' + data.message;
+                }
+            } catch (e) {
+                diffStats.textContent = '⚠️ 比對連線超時';
+            }
+            parseVlanList();
+        }
+
+        targetHostSelect.addEventListener('change', () => {
+            localStorage.setItem('vlan_portal_target_host', targetHostSelect.value);
+            fetchHostNetworkState();
+        });
+        btnTriggerDiff.onclick = () => fetchHostNetworkState();
+
+        // 解析文字清單 (支援逗號、Tab、空格) + 本機草稿自動保存 + 主機現況 Diff
+        function parseVlanList() {
+            const rawText = vlanInputList.value;
+            parsedVlanItems = [];
+
+            // 自動保存至瀏覽器 LocalStorage
+            if (rawText) {
+                localStorage.setItem('vlan_portal_draft_text', rawText);
+                draftSaveHint.style.display = 'inline';
+            } else {
+                localStorage.removeItem('vlan_portal_draft_text');
+                draftSaveHint.style.display = 'none';
+            }
+
+            if (!rawText.trim()) {
+                previewStats.textContent = '📊 待部署項目解析：0 筆';
+                previewTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748b;">尚未輸入任何項目</td></tr>';
+                btnDeployUnfinishedOnly.style.display = 'none';
+                return;
+            }
+
+            const lines = rawText.split('\n');
+            const vswitchCounts = {};
+            let existsCount = 0;
+            let newCount = 0;
+            let invalidCount = 0;
+
+            lines.forEach((line) => {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith('#')) return;
+
+                const parts = trimmed.split(/,|\t+/).map(p => p.trim());
+                if (parts.length >= 3) {
+                    const vsw = parts[0];
+                    const name = parts[1];
+                    const vlanIdNum = parseInt(parts[2], 10);
+                    const isVlanValid = !isNaN(vlanIdNum) && vlanIdNum >= 0 && vlanIdNum <= 4095;
+
+                    if (vsw && name) {
+                        let diffStatus = 'unknown';
+                        if (Object.keys(hostExistingPortGroups).length > 0) {
+                            const key = `${vsw.toLowerCase()}|${name.toLowerCase()}`;
+                            if (hostExistingPortGroups[key] !== undefined) {
+                                diffStatus = 'exists';
+                                existsCount++;
+                            } else {
+                                diffStatus = 'new';
+                                newCount++;
+                            }
+                        }
+
+                        if (!isVlanValid) {
+                            invalidCount++;
+                        }
+
+                        parsedVlanItems.push({
+                            vswitch: vsw,
+                            name: name,
+                            vlanId: isNaN(vlanIdNum) ? parts[2] : vlanIdNum,
+                            isInvalid: !isVlanValid,
+                            diffStatus: diffStatus,
+                            rawLine: trimmed
+                        });
+
+                        vswitchCounts[vsw] = (vswitchCounts[vsw] || 0) + 1;
+                    }
+                }
+            });
+
+            // 組合統計字串
+            let summaryStr = `已解析 ${parsedVlanItems.length} 筆規則 (`;
+            const vswSummary = Object.keys(vswitchCounts).map(k => `${k}: ${vswitchCounts[k]}筆`).join(', ');
+            summaryStr += vswSummary ? vswSummary + ')' : '無有效項目)';
+            
+            if (Object.keys(hostExistingPortGroups).length > 0) {
+                summaryStr += ` ➡️ [待建立: ${newCount} 筆 | 主機已存在: ${existsCount} 筆]`;
+                if (newCount > 0) {
+                    unfinishedCount.textContent = newCount;
+                    btnDeployUnfinishedOnly.style.display = 'inline-flex';
+                } else {
+                    btnDeployUnfinishedOnly.style.display = 'none';
+                }
+            } else {
+                btnDeployUnfinishedOnly.style.display = 'none';
+            }
+
+            previewStats.textContent = '📊 ' + summaryStr;
+
+            // 渲染預覽表格
+            if (parsedVlanItems.length === 0) {
+                previewTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #f87171;">無法辨識有效格式，請確認格式為：vSwitch名稱, PortGroup名稱, VLAN_ID</td></tr>';
+                return;
+            }
+
+            previewTableBody.innerHTML = '';
+            parsedVlanItems.forEach((item, idx) => {
+                const tr = document.createElement('tr');
+                
+                let diffBadge = '<span style="color:var(--text-muted); font-size:0.8rem;">尚未比對</span>';
+                if (item.isInvalid) {
+                    diffBadge = '<span class="badge badge-danger">無效 VLAN (需在 0~4095)</span>';
+                } else if (item.diffStatus === 'exists') {
+                    diffBadge = '<span class="badge badge-warning">主機已存在 (將略過)</span>';
+                } else if (item.diffStatus === 'new') {
+                    diffBadge = '<span class="badge badge-info">待建立 (新項目)</span>';
+                }
+
+                const vlanDisplay = item.isInvalid 
+                    ? `<span style="color:#f87171; font-weight:bold;">${item.vlanId} (無效)</span>`
+                    : `<span class="badge" style="background:#334155; color:#f8fafc;">VLAN ${item.vlanId}${item.vlanId === 4095 ? ' (Trunk)' : ''}</span>`;
+
+                tr.innerHTML = `
+                    <td style="color: var(--text-muted);">${idx + 1}</td>
+                    <td><strong style="color: #60a5fa;">${item.vswitch}</strong></td>
+                    <td>${item.name}</td>
+                    <td>${vlanDisplay}</td>
+                    <td>${diffBadge}</td>
+                `;
+                previewTableBody.appendChild(tr);
+            });
+        }
+
+        vlanInputList.addEventListener('input', parseVlanList);
+
+        // 載入 60 筆範例資料
+        document.getElementById('btnLoadExample').onclick = () => {
+            let exampleText = '# --- vSwitch0 (20 個業務與管理 VLAN) ---\n';
+            for (let i = 1; i <= 20; i++) {
+                const vlanId = 100 + i;
+                exampleText += `vSwitch0, VLAN${vlanId}-Tier${i}, ${vlanId}\n`;
+            }
+            exampleText += '\n# --- vSwitch1 (40 個後端與儲存 VLAN) ---\n';
+            for (let i = 1; i <= 40; i++) {
+                const vlanId = 200 + i;
+                exampleText += `vSwitch1, VLAN${vlanId}-App${i}, ${vlanId}\n`;
+            }
+            vlanInputList.value = exampleText;
+            parseVlanList();
+        };
+
+        // 匯出目前輸入清單為 CSV
+        document.getElementById('btnExportInputCsv').onclick = () => {
+            if (parsedVlanItems.length === 0) {
+                alert('目前清單無有效項目可供匯出！');
+                return;
+            }
+            const headers = ['所屬vSwitch', 'PortGroup名稱', 'VLAN_ID'];
+            const rows = parsedVlanItems.map(i => [i.vswitch, i.name, i.vlanId]);
+            const filename = `VLAN_清單備份_${new Date().toISOString().slice(0,10)}.csv`;
+            exportToCsv(filename, headers, rows);
+        };
+
+        // 清空
+        document.getElementById('btnClearList').onclick = () => {
+            if (vlanInputList.value && !confirm('確定要清空目前清單與本機草稿嗎？')) return;
+            vlanInputList.value = '';
+            parseVlanList();
+        };
+
+        // 處理連線
+        connectForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const server = document.getElementById('cfgServer').value.trim();
+            const username = document.getElementById('cfgUser').value.trim();
+            const password = document.getElementById('cfgPass').value;
+
+            const connSpinner = document.getElementById('connSpinner');
+            const connBtnLabel = document.getElementById('connBtnLabel');
+            connSpinner.style.display = 'inline-block';
+            connBtnLabel.textContent = '連線驗證中...';
+
+            try {
+                const res = await fetch('/api/connect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ server, username, password })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    isConnected = true;
+                    statusDot.classList.add('online');
+                    statusText.textContent = `已連線: ${server} (${data.serverType})`;
+                    btnDisconnect.style.display = 'inline-flex';
+                    modalOverlay.style.display = 'none';
+
+                    // 快取主機並更新複製選單
+                    cachedHosts = data.hosts || [];
+                    updateCloneHostDropdown();
+
+                    // 填入 ESXi 主機清單
+                    targetHostSelect.innerHTML = '';
+                    if (data.hosts && data.hosts.length > 0) {
+                        if (data.hosts.length > 1) {
+                            const optAll = document.createElement('option');
+                            optAll.value = '_ALL_';
+                            optAll.textContent = `🌟 全部主機 (${data.hosts.length} 台 ESXi 同步部署)`;
+                            targetHostSelect.appendChild(optAll);
+                        }
+                        data.hosts.forEach(h => {
+                            const opt = document.createElement('option');
+                            opt.value = h;
+                            opt.textContent = `🖥️ ${h}`;
+                            targetHostSelect.appendChild(opt);
+                        });
+
+                        // 嘗試恢復上次選取的主機
+                        const savedHost = localStorage.getItem('vlan_portal_target_host');
+                        if (savedHost && (data.hosts.includes(savedHost) || savedHost === '_ALL_')) {
+                            targetHostSelect.value = savedHost;
+                        }
+                    } else {
+                        targetHostSelect.innerHTML = '<option value="">(無可用 ESXi 主機)</option>';
+                    }
+
+                    // 填入分頁 2 的 VM 清單與 vSwitch
+                    currentNetworkMap = data.networkMap || {};
+                    const vswitchSelect = document.getElementById('vswitchSelect');
+                    vswitchSelect.innerHTML = '<option value="">-- 請選擇 vSwitch --</option>';
+                    Object.keys(currentNetworkMap).forEach(vsw => {
+                        const opt = document.createElement('option');
+                        opt.value = vsw;
+                        opt.textContent = vsw;
+                        vswitchSelect.appendChild(opt);
+                    });
+
+                    const vmDataList = document.getElementById('vmDataList');
+                    vmDataList.innerHTML = '';
+                    (data.vms || []).forEach(vm => {
+                        const opt = document.createElement('option');
+                        opt.value = vm;
+                        vmDataList.appendChild(opt);
+                    });
+
+                    // 填入分頁 3 的 Provision 控制項
+                    const provSourceVmSelect = document.getElementById('provSourceVmSelect');
+                    provSourceVmSelect.innerHTML = '<option value="">-- 請選擇來源範本 VM --</option>';
+                    (data.vms || []).forEach(vm => {
+                        const opt = document.createElement('option');
+                        opt.value = vm;
+                        opt.textContent = `💻 ${vm}`;
+                        provSourceVmSelect.appendChild(opt);
+                    });
+
+                    const provTargetHostSelect = document.getElementById('provTargetHostSelect');
+                    provTargetHostSelect.innerHTML = '<option value="">(預設使用來源 VM 所在主機)</option>';
+                    (data.hosts || []).forEach(h => {
+                        const opt = document.createElement('option');
+                        opt.value = h;
+                        opt.textContent = `🖥️ ${h}`;
+                        provTargetHostSelect.appendChild(opt);
+                    });
+
+                    const provDatastoreSelect = document.getElementById('provDatastoreSelect');
+                    provDatastoreSelect.innerHTML = '<option value="">(預設使用來源 VM 所在 Datastore)</option>';
+                    (data.datastores || []).forEach(ds => {
+                        const opt = document.createElement('option');
+                        opt.value = ds;
+                        opt.textContent = `💾 ${ds}`;
+                        provDatastoreSelect.appendChild(opt);
+                    });
+
+                    const provVswitchSelect = document.getElementById('provVswitchSelect');
+                    provVswitchSelect.innerHTML = '<option value="">-- 請選擇 vSwitch --</option>';
+                    Object.keys(currentNetworkMap).forEach(vsw => {
+                        const opt = document.createElement('option');
+                        opt.value = vsw;
+                        opt.textContent = vsw;
+                        provVswitchSelect.appendChild(opt);
+                    });
+
+                    // 自動觸發主機現況比對
+                    fetchHostNetworkState();
+                    alert(`連線成功！偵測到 ${data.hosts ? data.hosts.length : 0} 台 ESXi 主機與 ${data.datastores ? data.datastores.length : 0} 個 Datastore。`);
+                } else {
+                    alert('連線失敗：' + data.message);
+                }
+            } catch (err) {
+                alert('連線異常：' + err.message);
+            } finally {
+                connSpinner.style.display = 'none';
+                connBtnLabel.textContent = '連線並載入設定';
+            }
+        });
+
+        // 渲染部署結果清單與卡片
+        function renderDeployResults(data, reportTime) {
+            const deployResultArea = document.getElementById('deployResultArea');
+            const deployDetailBody = document.getElementById('deployDetailBody');
+            const deployReportTime = document.getElementById('deployReportTime');
+
+            lastDeployReport = data;
+            deployResultArea.style.display = 'block';
+            document.getElementById('sumTotal').textContent = data.summary.total;
+            document.getElementById('sumCreated').textContent = data.summary.created;
+            document.getElementById('sumSkipped').textContent = data.summary.skipped;
+            document.getElementById('sumError').textContent = data.summary.error;
+            deployReportTime.textContent = `執行時間：${reportTime || new Date().toLocaleString()}`;
+
+            deployDetailBody.innerHTML = '';
+            (data.results || []).forEach(item => {
+                const tr = document.createElement('tr');
+                let badgeClass = 'badge-success';
+                let badgeText = '建立成功';
+                if (item.status === 'skipped') {
+                    badgeClass = 'badge-warning';
+                    badgeText = '已存在 (略過)';
+                } else if (item.status === 'error') {
+                    badgeClass = 'badge-danger';
+                    badgeText = '失敗';
+                }
+
+                tr.innerHTML = `
+                    <td>${item.host}</td>
+                    <td>${item.vswitch}</td>
+                    <td><strong>${item.name}</strong></td>
+                    <td>VLAN ${item.vlanId}</td>
+                    <td><span class="badge ${badgeClass}">${badgeText}</span></td>
+                    <td style="color: var(--text-muted); font-size: 0.8rem;">${item.message}</td>
+                `;
+                deployDetailBody.appendChild(tr);
+            });
+
+            // 保存到 LocalStorage 以供隨時回顧
+            localStorage.setItem('vlan_portal_last_deploy_data', JSON.stringify({
+                time: reportTime || new Date().toLocaleString(),
+                data: data
+            }));
+            document.getElementById('lastDeployNotice').style.display = 'block';
+        }
+
+        // 查看上次執行結果
+        document.getElementById('btnViewLastResult').onclick = () => {
+            const raw = localStorage.getItem('vlan_portal_last_deploy_data');
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                renderDeployResults(parsed.data, parsed.time);
+                document.getElementById('deployResultArea').scrollIntoView({ behavior: 'smooth' });
+            }
+        };
+
+        // 匯出部署結果報表 CSV
+        document.getElementById('btnExportResultCsv').onclick = () => {
+            if (!lastDeployReport || !lastDeployReport.results) {
+                alert('尚無部署結果可供匯出！');
+                return;
+            }
+            const headers = ['目標主機', 'vSwitch名稱', 'PortGroup名稱', 'VLAN_ID', '執行狀態', '詳細訊息'];
+            const rows = lastDeployReport.results.map(r => [r.host, r.vswitch, r.name, r.vlanId, r.status, r.message]);
+            const filename = `VLAN_部署結果報表_${new Date().toISOString().slice(0,10)}.csv`;
+            exportToCsv(filename, headers, rows);
+        };
+
+        // 核心批次部署函式
+        async function executeBatchDeploy(itemsToDeploy, confirmPrompt) {
+            if (!isConnected) {
+                alert('請先點擊右上角「⚙️ 尚未連線」連上 vCenter 或 ESXi！');
+                modalOverlay.style.display = 'flex';
+                return;
+            }
+
+            const validItems = itemsToDeploy.filter(i => !i.isInvalid);
+            if (validItems.length === 0) {
+                alert('清單中沒有格式合法的 VLAN 項目！請確認 VLAN ID 介於 0 ~ 4095。');
+                return;
+            }
+
+            const targetHost = targetHostSelect.value;
+            if (!targetHost) {
+                alert('請選擇目標 ESXi 主機！');
+                return;
+            }
+
+            if (!confirm(`${confirmPrompt}\n目標主機：[${targetHost === '_ALL_' ? '全部主機' : targetHost}]\n總計：${validItems.length} 個項目`)) {
+                return;
+            }
+
+            const btn = document.getElementById('btnStartDeploy');
+            const icon = document.getElementById('deployBtnIcon');
+            const label = document.getElementById('deployBtnLabel');
+            const btnUnfinished = document.getElementById('btnDeployUnfinishedOnly');
+
+            btn.disabled = true;
+            btnUnfinished.disabled = true;
+            icon.innerHTML = '<span class="spinner"></span>';
+            label.textContent = `正在建立 ${validItems.length} 個 VLAN，請稍候...`;
+
+            try {
+                const res = await fetch('/api/deploy-batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        targetHost: targetHost,
+                        items: validItems
+                    })
+                });
+
+                const data = await res.json();
+
+                if (data.success) {
+                    renderDeployResults(data);
+                    document.getElementById('deployResultArea').scrollIntoView({ behavior: 'smooth' });
+                    // 重新更新主機比對現況
+                    fetchHostNetworkState();
+                } else {
+                    alert('部署失敗：' + data.message);
+                }
+            } catch (err) {
+                alert('呼叫 API 異常：' + err.message);
+            } finally {
+                btn.disabled = false;
+                btnUnfinished.disabled = false;
+                icon.textContent = '⚡';
+                label.textContent = '立即執行批次部署 (全部項目)';
+            }
+        }
+
+        // 提交部署全部
+        document.getElementById('batchDeployForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            executeBatchDeploy(parsedVlanItems, '確定要執行批次部署嗎？已存在的項目系統會自動略過。');
+        });
+
+        // 僅部署未完成項目
+        btnDeployUnfinishedOnly.addEventListener('click', function() {
+            const unfinished = parsedVlanItems.filter(i => !i.isInvalid && i.diffStatus === 'new');
+            executeBatchDeploy(unfinished, '確定要僅部署尚未建立的未完成項目嗎？');
+        });
+
+        // 分頁 2：連動選單邏輯
+        document.getElementById('vswitchSelect').addEventListener('change', function() {
+            const vsw = this.value;
+            const pgSelect = document.getElementById('portGroupSelect');
+            pgSelect.innerHTML = '';
+            if (!vsw || !currentNetworkMap[vsw]) {
+                pgSelect.disabled = true;
+                pgSelect.innerHTML = '<option value="">-- 請先選擇 vSwitch --</option>';
+                return;
+            }
+            pgSelect.disabled = false;
+            pgSelect.innerHTML = '<option value="">-- 請選擇 VLAN --</option>';
+            currentNetworkMap[vsw].forEach(pg => {
+                const opt = document.createElement('option');
+                opt.value = pg;
+                opt.textContent = pg;
+                pgSelect.appendChild(opt);
+            });
+        });
+
+        // 協定切換顯示自訂 Port
+        const assignProtocol = document.getElementById('assignProtocol');
+        const customPortGroup = document.getElementById('customPortGroup');
+        assignProtocol.addEventListener('change', function() {
+            customPortGroup.style.display = this.value === 'custom' ? 'flex' : 'none';
+        });
+
+        // 分頁 2 提交 (支援 Ping, RDP, SSH, Custom Port)
+        document.getElementById('vlanForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            if (!isConnected) {
+                alert('請先點擊右上角連線！');
+                modalOverlay.style.display = 'flex';
+                return;
+            }
+            const vmName = document.getElementById('vmSelect').value.trim();
+            const vswitch = document.getElementById('vswitchSelect').value;
+            const portGroup = document.getElementById('portGroupSelect').value;
+            const targetIp = document.getElementById('targetIp').value.trim();
+            const nicName = document.getElementById('nicName').value.trim();
+            const protocol = assignProtocol.value;
+            const customPort = document.getElementById('assignCustomPort').value.trim();
+
+            const resBox = document.getElementById('resultBoxAssign');
+            const spinner = document.getElementById('assignSpinner');
+            const btnLabel = document.getElementById('assignBtnLabel');
+            const submitBtn = document.getElementById('btnSubmitAssign');
+
+            resBox.style.display = 'none';
+            spinner.style.display = 'inline-block';
+            btnLabel.textContent = '切換網卡與連通性測試中 (含重試緩衝)...';
+            submitBtn.disabled = true;
+
+            try {
+                const res = await fetch('/api/assign', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        vmName, vswitch, portGroup, targetIp, nicName,
+                        protocol: protocol,
+                        port: customPort ? parseInt(customPort, 10) : 0
+                    })
+                });
+                const data = await res.json();
+                resBox.style.display = 'block';
+
+                if (data.success) {
+                    const connBadge = data.connectivityOk 
+                        ? '<span class="badge badge-success" style="margin-left:8px;">連通正常 (PASS)</span>'
+                        : '<span class="badge badge-warning" style="margin-left:8px;">無回應/逾時 (FAIL)</span>';
+
+                    document.getElementById('assignResTitle').innerHTML = `✅ 網卡切換完成 ${connBadge}`;
+                    document.getElementById('assignResTitle').style.color = 'var(--success)';
+                    document.getElementById('assignResMsg').innerHTML = `
+                        <strong>虛擬機：</strong> ${vmName}<br>
+                        <strong>網卡切換歷程：</strong> [${data.beforePortGroup || '原始'}] ➡️ <strong>${portGroup}</strong> (${vswitch})<br>
+                        <strong>連通性測試：</strong> ${data.detail || (data.connectivityOk ? '通訊正常' : '超時無回應')}<br>
+                        <span style="font-size:0.8rem; color:#94a3b8; margin-top:4px; display:inline-block;">時間戳記：${data.timestamp}</span>
+                    `;
+                } else {
+                    document.getElementById('assignResTitle').textContent = '❌ 操作失敗';
+                    document.getElementById('assignResTitle').style.color = 'var(--danger)';
+                    document.getElementById('assignResMsg').textContent = data.message;
+                }
+            } catch (err) {
+                resBox.style.display = 'block';
+                document.getElementById('assignResTitle').textContent = '⚠️ 異常';
+                document.getElementById('assignResTitle').style.color = 'var(--warning)';
+                document.getElementById('assignResMsg').textContent = err.message;
+            } finally {
+                spinner.style.display = 'none';
+                btnLabel.textContent = '⚡ 立即執行切換與連通性測試';
+                submitBtn.disabled = false;
+            }
+        });
+
+        // 分頁 3：來源 VM 選擇時智慧切換 OS Type
+        document.getElementById('provSourceVmSelect').addEventListener('change', function() {
+            const val = (this.value || '').toLowerCase();
+            const osSelect = document.getElementById('provOsType');
+            if (val.match(/ubuntu|debian|centos|rhel|redhat|sles|suse|photon|fedora|oracle|rocky|alma|linux/)) {
+                osSelect.value = 'Linux';
+            } else if (val.match(/win|srv|server|2016|2019|2022|2025/)) {
+                osSelect.value = 'Windows';
+            } else {
+                osSelect.value = 'auto';
+            }
+        });
+
+        // 輔助函式：將任意字串轉為符合 RFC 1123 的標準 Hostname (去除底線、點、空格，僅保留英數字與連字號)
+        function sanitizeHostName(val, osType) {
+            let s = (val || '')
+                .replace(/[^a-zA-Z0-9-]/g, '-')
+                .replace(/-+/g, '-')
+                .replace(/^-+|-+$/g, '');
+            if (osType === 'Windows') {
+                if (s.length > 15) s = s.substring(0, 15).replace(/-+$/, '');
+            } else {
+                s = s.toLowerCase();
+                if (s.length > 63) s = s.substring(0, 63).replace(/-+$/, '');
+            }
+            return s;
+        }
+
+        // 分頁 3：VM 名稱與電腦名稱自動同步 (含 RFC 1123 合規轉譯)
+        const provNewVmName = document.getElementById('provNewVmName');
+        const provHostName = document.getElementById('provHostName');
+        provNewVmName.addEventListener('input', function() {
+            if (!provHostName.dataset.userEdited) {
+                const osType = document.getElementById('provOsType').value;
+                provHostName.value = sanitizeHostName(this.value, osType);
+            }
+        });
+        provHostName.addEventListener('input', function() {
+            this.dataset.userEdited = 'true';
+        });
+        provHostName.addEventListener('blur', function() {
+            const osType = document.getElementById('provOsType').value;
+            this.value = sanitizeHostName(this.value, osType);
+        });
+
+        // 分頁 3：IP 配發模式切換 (Static IP vs DHCP)
+        const provIpMode = document.getElementById('provIpMode');
+        const provStaticIpContainer = document.getElementById('provStaticIpContainer');
+        const provIp = document.getElementById('provIp');
+        const provIpModeHint = document.getElementById('provIpModeHint');
+
+        provIpMode.addEventListener('change', function() {
+            if (this.value === 'static') {
+                provStaticIpContainer.style.display = 'grid';
+                provIp.required = true;
+                if (provIpModeHint) {
+                    provIpModeHint.textContent = '💡 推薦固定 IP：企業與實驗室 VLAN 通常無 DHCP 伺服器，直接指定靜態 IP 可確保克隆後必定能連線。';
+                    provIpModeHint.style.color = 'var(--text-muted)';
+                }
+            } else {
+                provStaticIpContainer.style.display = 'none';
+                provIp.required = false;
+                if (provIpModeHint) {
+                    provIpModeHint.textContent = '⚠️ 注意：僅在確認目標 VLAN 內部有架設 DHCP 伺服器時使用，否則 VM 開機後將無法取得 IP！';
+                    provIpModeHint.style.color = '#f59e0b';
+                }
+            }
+        });
+
+        // 智慧推算：輸入 IP 時自動帶入預設閘道 (.1) 與子網路遮罩 (255.255.255.0)
+        provIp.addEventListener('input', function() {
+            const val = this.value.trim();
+            const m = val.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3})\.(\d{1,3})$/);
+            if (m) {
+                const prefix = m[1];
+                const gwInput = document.getElementById('provGateway');
+                if (!gwInput.value || gwInput.dataset.autoFilled === 'true') {
+                    gwInput.value = prefix + '.1';
+                    gwInput.dataset.autoFilled = 'true';
+                }
+                const subnetInput = document.getElementById('provSubnet');
+                if (!subnetInput.value) {
+                    subnetInput.value = '255.255.255.0';
+                }
+            }
+        });
+        document.getElementById('provGateway').addEventListener('input', function() {
+            this.dataset.autoFilled = 'false';
+        });
+
+        // 一鍵自動尋找空閒 IP
+        document.getElementById('btnScanFreeIp').addEventListener('click', async function() {
+            const btn = this;
+            const provIp = document.getElementById('provIp');
+            const provGateway = document.getElementById('provGateway');
+            const provSubnet = document.getElementById('provSubnet');
+            const provDns = document.getElementById('provDns');
+            const badge = document.getElementById('ipCheckBadge');
+
+            let subnetPrefix = '';
+            const ipVal = provIp.value.trim();
+            const gwVal = provGateway.value.trim();
+            const m = ipVal.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3})/) || gwVal.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3})/);
+            if (m) {
+                subnetPrefix = m[1];
+            } else {
+                const pgSelect = document.getElementById('provPortGroupSelect').value;
+                const pgMatch = pgSelect.match(/(\d{1,3}\.\d{1,3}\.\d{1,3})/);
+                const defaultPrompt = pgMatch ? pgMatch[1] : '192.168.10';
+                const inputSubnet = prompt('請輸入欲探測空閒 IP 的網段前綴 (例如 192.168.10 或 10.0.1)：', defaultPrompt);
+                if (!inputSubnet) return;
+                subnetPrefix = inputSubnet.trim();
+            }
+
+            btn.disabled = true;
+            btn.textContent = '⚡ 掃描中...';
+            badge.style.display = 'block';
+            badge.style.background = '#1e293b';
+            badge.style.border = '1px solid #475569';
+            badge.style.color = '#cbd5e1';
+            badge.textContent = `⏳ 正在掃描網段 ${subnetPrefix}.x (快速 Ping 探測中)...`;
+
+            try {
+                const res = await fetch(`/api/scan-free-ip?subnet=${encodeURIComponent(subnetPrefix)}&start=50`);
+                const data = await res.json();
+                if (data.success && data.freeIp) {
+                    provIp.value = data.freeIp;
+                    provGateway.value = data.gateway;
+                    provGateway.dataset.autoFilled = 'true';
+                    provSubnet.value = data.subnet;
+                    if (!provDns.value) provDns.value = data.dns;
+
+                    badge.style.background = 'rgba(34, 197, 94, 0.15)';
+                    badge.style.border = '1px solid rgba(34, 197, 94, 0.4)';
+                    badge.style.color = '#4ade80';
+                    badge.innerHTML = `🟢 成功探測到可用空閒 IP：<strong>${data.freeIp}</strong>（預設閘道：${data.gateway}）`;
+                } else {
+                    badge.style.background = 'rgba(239, 68, 68, 0.15)';
+                    badge.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+                    badge.style.color = '#f87171';
+                    badge.textContent = data.message || '未找到可用空閒 IP，請手動指定。';
+                }
+            } catch (err) {
+                badge.style.background = 'rgba(239, 68, 68, 0.15)';
+                badge.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+                badge.style.color = '#f87171';
+                badge.textContent = '探測請求失敗：' + err.message;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '⚡ 自動尋找空閒 IP';
+            }
+        });
+
+        // 即時檢查 IP 是否已被佔用
+        document.getElementById('btnCheckIpConflict').addEventListener('click', async function() {
+            const btn = this;
+            const provIp = document.getElementById('provIp');
+            const ip = provIp.value.trim();
+            const badge = document.getElementById('ipCheckBadge');
+
+            if (!ip) {
+                alert('請先輸入欲檢查的 IP 位址！');
+                provIp.focus();
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = '🔍 檢測中...';
+            badge.style.display = 'block';
+            badge.style.background = '#1e293b';
+            badge.style.border = '1px solid #475569';
+            badge.style.color = '#cbd5e1';
+            badge.textContent = `⏳ 正在檢測 ${ip} 是否有設備在線...`;
+
+            try {
+                const res = await fetch(`/api/check-ip?ip=${encodeURIComponent(ip)}`);
+                const data = await res.json();
+                if (data.success) {
+                    if (data.isAlive) {
+                        badge.style.background = 'rgba(239, 68, 68, 0.15)';
+                        badge.style.border = '1px solid rgba(239, 68, 68, 0.5)';
+                        badge.style.color = '#f87171';
+                        badge.innerHTML = `⚠️ <strong>衝突警告：</strong> IP <strong>${ip}</strong> 目前已有線上設備回應！請更換其他 IP 避免網路衝突。`;
+                    } else {
+                        badge.style.background = 'rgba(34, 197, 94, 0.15)';
+                        badge.style.border = '1px solid rgba(34, 197, 94, 0.5)';
+                        badge.style.color = '#4ade80';
+                        badge.innerHTML = `🟢 <strong>檢測通過：</strong> IP <strong>${ip}</strong> 目前無任何設備回應，可安全配置！`;
+                    }
+                } else {
+                    badge.style.background = 'rgba(239, 68, 68, 0.15)';
+                    badge.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+                    badge.style.color = '#f87171';
+                    badge.textContent = data.message || '檢測失敗';
+                }
+            } catch (err) {
+                badge.style.background = 'rgba(239, 68, 68, 0.15)';
+                badge.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+                badge.style.color = '#f87171';
+                badge.textContent = '檢測異常：' + err.message;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔍 檢查 IP 衝突';
+            }
+        });
+
+        // 分頁 3：vSwitch 與 PortGroup 二級連動
+        document.getElementById('provVswitchSelect').addEventListener('change', function() {
+            const vsw = this.value;
+            const pgSelect = document.getElementById('provPortGroupSelect');
+            pgSelect.innerHTML = '';
+            if (!vsw || !currentNetworkMap[vsw]) {
+                pgSelect.disabled = true;
+                pgSelect.innerHTML = '<option value="">-- 請先選擇 vSwitch --</option>';
+                return;
+            }
+            pgSelect.disabled = false;
+            pgSelect.innerHTML = '<option value="">-- 請選擇 VLAN --</option>';
+            currentNetworkMap[vsw].forEach(pg => {
+                const opt = document.createElement('option');
+                opt.value = pg;
+                opt.textContent = pg;
+                pgSelect.appendChild(opt);
+            });
+        });
+
+        // 選擇 PortGroup 時提示相關子網路
+        document.getElementById('provPortGroupSelect').addEventListener('change', function() {
+            const pg = this.value;
+            const provIp = document.getElementById('provIp');
+            const provGateway = document.getElementById('provGateway');
+            if (pg && !provIp.value) {
+                const ipMatch = pg.match(/(\d{1,3}\.\d{1,3}\.\d{1,3})/);
+                if (ipMatch) {
+                    provIp.placeholder = `例如：${ipMatch[1]}.150`;
+                    if (!provGateway.value) provGateway.placeholder = `例如：${ipMatch[1]}.1`;
+                }
+            }
+        });
+
+        // VMware Tools IP 即時輪詢監控器
+        let vmToolsPollTimer = null;
+        function startVmToolsPolling(vmName, osType) {
+            if (vmToolsPollTimer) clearInterval(vmToolsPollTimer);
+            let attempts = 0;
+            const maxAttempts = 25;
+            const trackerMsg = document.getElementById('vmLiveTrackerMsg');
+
+            vmToolsPollTimer = setInterval(async () => {
+                attempts++;
+                if (attempts > maxAttempts) {
+                    clearInterval(vmToolsPollTimer);
+                    if (trackerMsg) {
+                        trackerMsg.innerHTML = '⏱️ 已達追蹤等待上限。虛擬機仍在開機初始化或客體作業系統載入中，請稍候於 vCenter 檢視即時 IP。';
+                    }
+                    return;
+                }
+
+                try {
+                    const r = await fetch(`/api/vm-guest-ip?vmName=${encodeURIComponent(vmName)}`);
+                    const d = await r.json();
+                    if (d.success && d.hasIp && d.primaryIp) {
+                        clearInterval(vmToolsPollTimer);
+                        const tracker = document.getElementById('vmLiveTracker');
+                        if (tracker) {
+                            const isWin = (osType === 'Windows');
+                            const connCmd = isWin ? `mstsc /v:${d.primaryIp}` : `ssh root@${d.primaryIp}`;
+                            const copyBtnLabel = isWin ? '📋 複製 RDP 指令' : '📋 複製 SSH 指令';
+
+                            tracker.style.border = '1px solid rgba(34, 197, 94, 0.5)';
+                            tracker.style.background = 'rgba(34, 197, 94, 0.12)';
+                            tracker.innerHTML = `
+                                <div style="font-weight: bold; color: #4ade80; font-size: 0.98rem; display: flex; align-items: center; gap: 6px;">
+                                    <span>🟢 虛擬機已成功啟動並取得 IP！</span>
+                                </div>
+                                <div style="margin-top: 8px; font-size: 0.9rem; color: #e2e8f0;">
+                                    <strong>即時實體 IP：</strong> <code style="background: #0f172a; padding: 2px 8px; border-radius: 4px; color: #38bdf8; font-size: 1.05rem; font-weight: bold;">${d.primaryIp}</code>
+                                    ${d.ipAddresses.length > 1 ? `<span style="font-size:0.8rem; color:#94a3b8;"> (所有偵測 IP: ${d.ipAddresses.join(', ')})</span>` : ''}
+                                </div>
+                                <div style="margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                    <span style="font-size: 0.85rem; color: #94a3b8;">快速連線：</span>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('${connCmd}'); alert('已複製連線指令：${connCmd}');">${copyBtnLabel}</button>
+                                    <span style="font-size: 0.82rem; color: #94a3b8;">(指令: <code>${connCmd}</code>)</span>
+                                </div>
+                            `;
+                        }
+                    } else if (trackerMsg) {
+                        trackerMsg.innerHTML = `正在向 VMware Tools 查詢連線狀態... (${attempts}/${maxAttempts}) ${d.powerState ? `[電源狀態: ${d.powerState}]` : ''}`;
+                    }
+                } catch (e) {
+                    // Silently ignore transient fetch errors
+                }
+            }, 3500);
+        }
+
+        // 分頁 3 提交：克隆並套用 OS 自訂規格
+        document.getElementById('provisionForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            if (!isConnected) {
+                alert('請先點擊右上角連線！');
+                modalOverlay.style.display = 'flex';
+                return;
+            }
+
+            const sourceVm = document.getElementById('provSourceVmSelect').value;
+            const targetHost = document.getElementById('provTargetHostSelect').value;
+            const osType = document.getElementById('provOsType').value;
+            const newVmName = document.getElementById('provNewVmName').value.trim();
+            const hostName = document.getElementById('provHostName').value.trim();
+            const datastore = document.getElementById('provDatastoreSelect').value;
+            const vswitch = document.getElementById('provVswitchSelect').value;
+            const portGroup = document.getElementById('provPortGroupSelect').value;
+            const ipMode = document.getElementById('provIpMode').value;
+            const ip = ipMode === 'static' ? document.getElementById('provIp').value.trim() : '';
+            const subnet = ipMode === 'static' ? document.getElementById('provSubnet').value.trim() : '';
+            const gateway = ipMode === 'static' ? document.getElementById('provGateway').value.trim() : '';
+            const dns = ipMode === 'static' ? document.getElementById('provDns').value.trim() : '';
+            const autoPowerOn = document.getElementById('provAutoPowerOn').checked;
+
+            const spinner = document.getElementById('provSpinner');
+            const label = document.getElementById('provBtnLabel');
+            const btn = document.getElementById('btnSubmitProvision');
+            const resBox = document.getElementById('resultBoxProvision');
+
+            spinner.style.display = 'inline-block';
+            label.textContent = '克隆與自訂規格套用中 (可能需 1~3 分鐘)...';
+            btn.disabled = true;
+            resBox.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/clone-vm-custom', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sourceVm, targetHost, osType, newVmName, hostName,
+                        datastore, vswitch, portGroup, ipMode, ip, subnet, gateway, dns, autoPowerOn
+                    })
+                });
+                const data = await res.json();
+                resBox.style.display = 'block';
+
+                if (data.success) {
+                    document.getElementById('provResTitle').textContent = '🎉 虛擬機開通成功！';
+                    document.getElementById('provResTitle').style.color = 'var(--success)';
+
+                    const trackerHtml = autoPowerOn ? `
+                        <div id="vmLiveTracker" style="margin-top: 14px; padding: 14px; background: rgba(30, 41, 59, 0.7); border-radius: 8px; border: 1px dashed #3b82f6;">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span class="spinner" style="width: 14px; height: 14px; border-width: 2px; display: inline-block;"></span>
+                                <strong style="color: #60a5fa;">📡 虛擬機即時狀態監控中... (正在等待開機與 VMware Tools 回報 IP)</strong>
+                            </div>
+                            <div id="vmLiveTrackerMsg" style="margin-top: 6px; font-size: 0.85rem; color: #94a3b8;">
+                                正在向 vCenter / VMware Tools 查詢即時連線狀態 (約需 20~60 秒)...
+                            </div>
+                        </div>
+                    ` : '';
+
+                    document.getElementById('provResMsg').innerHTML = `
+                        <strong>虛擬機名稱：</strong> ${data.vmName}<br>
+                        <strong>電腦名稱 (Hostname)：</strong> ${data.hostName}<br>
+                        <strong>網路 IP 設定：</strong> ${data.ip}<br>
+                        <strong>所屬 VLAN (PortGroup)：</strong> ${data.portGroup}<br>
+                        <strong>開機狀態：</strong> ${data.powerOn ? '已自動開機 (正在執行 OS 自訂規格設定)' : '未開機'}<br>
+                        <p style="margin-top: 8px; color: #94a3b8;">
+                            💡 作業系統自訂引擎 (Sysprep / cloud-init) 在初次開機後會自動完成主機名稱、網路卡綁定與 SID 重設。
+                        </p>
+                        ${trackerHtml}
+                    `;
+                    resBox.scrollIntoView({ behavior: 'smooth' });
+
+                    if (autoPowerOn) {
+                        startVmToolsPolling(data.vmName, osType);
+                    }
+                } else {
+                    document.getElementById('provResTitle').textContent = '❌ 克隆部署失敗';
+                    document.getElementById('provResTitle').style.color = 'var(--danger)';
+                    document.getElementById('provResMsg').textContent = data.message;
+                }
+            } catch (err) {
+                resBox.style.display = 'block';
+                document.getElementById('provResTitle').textContent = '⚠️ 呼叫異常';
+                document.getElementById('provResTitle').style.color = 'var(--warning)';
+                document.getElementById('provResMsg').textContent = err.message;
+            } finally {
+                spinner.style.display = 'none';
+                label.textContent = '🚀 立即執行克隆與自動配網';
+                btn.disabled = false;
+            }
+        });
+
+        // 頁面初次載入：自動恢復草稿與歷史執行記錄
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedDraft = localStorage.getItem('vlan_portal_draft_text');
+            if (savedDraft) {
+                vlanInputList.value = savedDraft;
+                parseVlanList();
+            }
+
+            const savedLastDeploy = localStorage.getItem('vlan_portal_last_deploy_data');
+            if (savedLastDeploy) {
+                document.getElementById('lastDeployNotice').style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>
