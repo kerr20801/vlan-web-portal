@@ -1,5 +1,4 @@
-# Ignore heavy portable modules directory (290MB+)
-Modules/
-
 # Ignore zip archives
 *.zip
+*.tmp
+.DS_Store

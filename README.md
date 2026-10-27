@@ -1,4 +1,4 @@
-﻿# 🌐 VMware VLAN Auto Portal (VMware VLAN 批次自動部署與虛擬機開通控制台)
+# 🌐 VMware VLAN Auto Portal (VMware VLAN 批次自動部署與虛擬機開通控制台)
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://microsoft.com/PowerShell)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20%7C%20Server-lightgrey.svg)]()
@@ -142,7 +142,8 @@ vSwitch1, VLAN-Trunk-All, 4095
 ---
 
 ## 👨‍💻 作者 (Author)
-* **Kerr** ([@kerr20801](https://github.com/kerr20801))
+* **Kerr** ([@kerr20801](https://github.com/kerr20801)) — 專案發起與核心架構設計
+* 🤖 **[Google Gemini](https://gemini.google.com)** — AI 結對編程夥伴 (Pair Programming Copilot)
 
 ---
 
